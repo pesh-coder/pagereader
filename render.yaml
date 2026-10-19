@@ -1,0 +1,32 @@
+# Review-only blueprint: applying it creates a paid service/disk. Not deployed.
+services:
+  - type: web
+    name: pagestream
+    runtime: node
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: bash deploy/build.sh
+    startCommand: node deploy/start.mjs
+    healthCheckPath: /health
+    disk:
+      name: pagestream-state
+      mountPath: /var/data/pagestream
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.17.1
+      - key: NODE_ENV
+        value: production
+      - key: BSV_NETWORK
+        value: main
+      - key: PAGESTREAM_STATE_DIR
+        value: /var/data/pagestream
+      - key: PAGESTREAM_REQUIRE_EXISTING_STATE
+        value: "1"
+      - key: PAGESTREAM_MAINTENANCE
+        value: "1"
+      - key: WALLET_STORAGE_URL
+        value: https://storage.babbage.systems
+      - key: SERVER_PRIVATE_KEY
+        sync: false
