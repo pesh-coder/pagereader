@@ -1,5 +1,7 @@
 # Pagestream requirements audit
 
+2026-10-19 deployment update: Vercel frontend + Render backend configuration, variable templates, origin precedence and no-cache proxy handling are prepared. Client/spike builds and **62 local tests PASS**. No hosting projects exist yet; migration/proxy/phone acceptance and payment activation are not completed. Purchases remain paused and C1–C11 statuses below remain unchanged. [Evidence](../spike/evidence/split-host-readiness-2026-10-19.md), [setup](../deploy/vercel-render.md).
+
 Publication note, 2026-10-19: the owner's subsequent instruction authorizes publishing reviewed repository files to GitHub. Earlier local-only wording below records the prior checkpoint. The handoff remains a review draft, no direct team notification is authorized, and all acceptance statuses remain unchanged. See [commit organization](commit-history.md).
 
 Updated 2026-10-18. The [plan v3](pagestream-plan.md) remains authoritative. Existing repository, mainnet, npm development server and original pilcrow branding are preserved. No ngrok, new spending, grant changes or external sending is authorized by this audit. The team handoff stays local for the user's review.

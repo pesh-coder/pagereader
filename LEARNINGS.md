@@ -6,6 +6,8 @@ Updated 2026-10-18. Plan v3 remains authoritative. This four-section summary sup
 
 ## 1. Who is calling
 
+2026-10-19 hosting update: the owner selected Vercel frontend + Render backend. The reader retains one frontend origin through API/auth rewrites; the existing key and sole SQLite ledger stay on Render after reviewed import. Variable templates and maintenance-first setup are prepared, with no projects created. Client/spike builds and 62 local tests pass; no generated wallet helpers changed and no sats were spent. Deployment, native allowance enforcement and phone acceptance remain open. See [split-host evidence](spike/evidence/split-host-readiness-2026-10-19.md) and [setup variables](deploy/vercel-render.md). All C1–C11 statuses and the purchase pause are unchanged.
+
 Catalogue and pages 1–2 of every edition bypass authentication and do not load the wallet module. Explicit paid/owned access uses generated acquisition and official BRC-103 authentication. Identity plus immutable edition/page keys purchases and bookmarks, without signup, email, password, card or Connect wallet button. Generated src/bsv files remain untouched; starter signed-requests authentication was not mixed into BRC-105.
 
 The wallet identity is public, not a recovery phrase. Server receiving keys remain in the ignored environment file; the generated verification-only ProtoWallet does not replace the persistent receiver. Explicit fresh-device bookmark discovery is now implemented through Resume saved page, using recovery-only owned delivery. Its desktop browser check passed; matching Desktop/Browser identity, phone funding and physical phone resume remain unverified. Default free reading still makes no wallet calls.

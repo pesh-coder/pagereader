@@ -1,5 +1,7 @@
 # Remaining requirements - execution queue
 
+2026-10-19 requirement 8 update: the owner chose Vercel frontend + Render backend and requested variables before creating projects. Same-origin routing/static staging, explicit frontend origin, cache prevention and copyable templates are implemented; **62 local tests PASS**, client/spike builds PASS. No projects, import or hosted acceptance have been performed. [Setup and activation gates](../deploy/vercel-render.md). The purchase pause remains; creating the hosts alone does not satisfy native allowance or recovery acceptance.
+
 Publication note, 2026-10-19: reviewed repository files may now be committed and pushed to GitHub at the owner's request. The prior local-review restriction below is superseded only for repository publication; direct team notification, deployment and spending remain outside this instruction. See [commit organization](commit-history.md).
 
 Updated 2026-10-18. This is the user's nine-item list, with current evidence and concrete next work. The [plan v3](pagestream-plan.md) and [C1-C11 audit](project-requirements-status.md) retain their original acceptance targets. Older checkpoints remain in [history](history/requirements-execution-before-consolidation-20261017T185434Z.md).

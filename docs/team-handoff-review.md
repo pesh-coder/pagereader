@@ -1,5 +1,7 @@
 # Pagestream handoff — review draft
 
+2026-10-19 deployment update: the owner selected Vercel frontend + Render backend. Routing, templates and maintenance-first setup are prepared and 62 local tests pass. Neither hosting project exists yet. No deployment, key/state upload, grant or payment occurred; the purchase pause and C1–C11 statuses remain unchanged. [Split-host setup](../deploy/vercel-render.md).
+
 Publication note, 2026-10-19: the owner authorized including this review draft in the GitHub repository. The earlier local-only instruction below describes the prior checkpoint. No direct team message or upstream issue/PR is authorized or recorded. Review and C11 acceptance remain outstanding. See [commit organization](commit-history.md).
 
 Prepared 2026-10-17; updated 2026-10-18. **Keep local for the user's review. No team message, issue comment or PR was sent.**
