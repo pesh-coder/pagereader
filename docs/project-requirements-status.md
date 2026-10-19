@@ -1,5 +1,7 @@
 # Pagestream requirements audit
 
+Current hosting constraint, 2026-10-19: **$0**. Paid Render/disk is no longer an acceptable deployment target. Free Render needs external durable storage and a safe ledger migration; the current implementation still requires SQLite. Vercel Hobby's payment-use restriction also changes the prior recommendation. [Feasibility evidence](../spike/evidence/zero-cost-hosting-2026-10-19.md). This is an unimplemented deployment dependency; C1–C11 and the pause remain unchanged.
+
 2026-10-19 deployment update: Vercel frontend + Render backend configuration, variable templates, origin precedence and no-cache proxy handling are prepared. Client/spike builds and **62 local tests PASS**. No hosting projects exist yet; migration/proxy/phone acceptance and payment activation are not completed. Purchases remain paused and C1–C11 statuses below remain unchanged. [Evidence](../spike/evidence/split-host-readiness-2026-10-19.md), [setup](../deploy/vercel-render.md).
 
 Publication note, 2026-10-19: the owner's subsequent instruction authorizes publishing reviewed repository files to GitHub. Earlier local-only wording below records the prior checkpoint. The handoff remains a review draft, no direct team notification is authorized, and all acceptance statuses remain unchanged. See [commit organization](commit-history.md).

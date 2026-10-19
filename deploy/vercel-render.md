@@ -1,5 +1,7 @@
 # Vercel frontend and Render backend
 
+Superseded budget assumption, 2026-10-19: the owner requires $0 hosting. This guide assumes paid Render storage, and Vercel Hobby's commercial/payment restriction was not accounted for. Do not follow this guide as a zero-cost live deployment. See [current feasibility findings](../spike/evidence/zero-cost-hosting-2026-10-19.md); remote persistent storage for free Render is not yet implemented.
+
 Prepared 2026-10-19. Configuration is implemented locally; no hosting projects have been created and no state/key has been uploaded. New purchases remain paused. This updates the earlier single-service recommendation at the owner's request.
 
 The stable Vercel production hostname serves `/reader/` and its static assets. API requests, `/.well-known/auth`, `/manifest.json`, `/icon.svg` and `/health` are externally rewritten to one Render backend with the path/query unchanged. Browser requests stay on the frontend origin; no frontend API-base or CORS variable is needed. The backend holds the existing receiving key and the only authoritative SQLite ledger. The two hosts do not synchronize separate database copies.

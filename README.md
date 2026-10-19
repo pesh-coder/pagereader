@@ -28,6 +28,8 @@ For a stable receiving identity, configure `spike/.env` locally from the blank [
 
 Hosting configuration: [Vercel frontend + Render backend, exact variables and setup order](deploy/vercel-render.md). No hosting project is provisioned. Reading/recovery activation and unpausing purchases are separate steps.
 
+Current budget is **$0 hosting**. The existing paid Render blueprint is not suitable for this budget. A free Render reader/API with external durable storage needs additional implementation; Vercel Hobby's payment-use restriction also changes the earlier recommendation. See [zero-cost hosting findings](spike/evidence/zero-cost-hosting-2026-10-19.md).
+
 - [Authoritative plan](docs/pagestream-plan.md), [execution queue](docs/requirements-execution.md), [approved reader milestone](docs/reader-milestone-1.md).
 - [Shared receipt fee repair](spike/evidence/shared-receipt-fees-2026-10-18.md), [original-proof recovery](spike/evidence/recovery-fix-2026-10-17.md), [wallet attribution](spike/evidence/spending-originator-accounting-2026-10-17.md).
 - [Evidence privacy](spike/evidence/README.md), [review draft for the team](docs/team-handoff-review.md), [six-step demo runbook](docs/mainnet-demo-runbook.md).
