@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "books": [
+    {
+      "id": "holmes",
+      "gid": 1661,
+      "editionId": "1661-922e2a12ccb43a4c9544c260b2166c6ad2097aeb5957faeee113f173bb857cd0-paragraphs-1800-v1",
+      "editionFile": "edition.json",
+      "sourceFile": "gutenberg-1661.txt"
+    },
+    {
+      "id": "pride",
+      "gid": 1342,
+      "editionId": "1342-3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75-paragraphs-1800-v1",
+      "editionFile": "editions/1342-3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-1342-3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75.txt"
+    },
+    {
+      "id": "frankenstein",
+      "gid": 84,
+      "editionId": "84-7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3-paragraphs-1800-v1",
+      "editionFile": "editions/84-7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-84-7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3.txt"
+    },
+    {
+      "id": "dorian",
+      "gid": 174,
+      "editionId": "174-38f36b510417177aa87a6a24c968e3ec63a447b7df36a9c1a7c5a3f2d9e51547-paragraphs-1800-v1",
+      "editionFile": "editions/174-38f36b510417177aa87a6a24c968e3ec63a447b7df36a9c1a7c5a3f2d9e51547-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-174-38f36b510417177aa87a6a24c968e3ec63a447b7df36a9c1a7c5a3f2d9e51547.txt"
+    },
+    {
+      "id": "dracula",
+      "gid": 345,
+      "editionId": "345-96cd16eacdbfebae8fdda5591f66e0cc8ee76be18e0cd1aca02bc00615782d28-paragraphs-1800-v1",
+      "editionFile": "editions/345-96cd16eacdbfebae8fdda5591f66e0cc8ee76be18e0cd1aca02bc00615782d28-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-345-96cd16eacdbfebae8fdda5591f66e0cc8ee76be18e0cd1aca02bc00615782d28.txt"
+    },
+    {
+      "id": "meditations",
+      "gid": 2680,
+      "editionId": "2680-6977474f82a39dd88a4af31a59504821658174d33c177732c54357e4d680b96c-paragraphs-1800-v1",
+      "editionFile": "editions/2680-6977474f82a39dd88a4af31a59504821658174d33c177732c54357e4d680b96c-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-2680-6977474f82a39dd88a4af31a59504821658174d33c177732c54357e4d680b96c.txt"
+    },
+    {
+      "id": "metamorphosis",
+      "gid": 5200,
+      "editionId": "5200-0933283a19a4daaef0d412e8f69c74fae126b0a946cb74b8f3c783a8e869830d-paragraphs-1800-v1",
+      "editionFile": "editions/5200-0933283a19a4daaef0d412e8f69c74fae126b0a946cb74b8f3c783a8e869830d-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-5200-0933283a19a4daaef0d412e8f69c74fae126b0a946cb74b8f3c783a8e869830d.txt"
+    },
+    {
+      "id": "alice",
+      "gid": 11,
+      "editionId": "11-01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e-paragraphs-1800-v1",
+      "editionFile": "editions/11-01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e-paragraphs-1800-v1.json",
+      "sourceFile": "sources/gutenberg-11-01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e.txt"
+    }
+  ]
+}

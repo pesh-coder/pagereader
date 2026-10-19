@@ -1,0 +1,65 @@
+[
+  {
+    "id": "pride",
+    "gid": 1342,
+    "title": "Pride and Prejudice",
+    "author": "Jane Austen",
+    "year": 1813,
+    "chapter": "Chapter I",
+    "excerpt": "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife. However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered the rightful property of some one or other of their daughters."
+  },
+  {
+    "id": "frankenstein",
+    "gid": 84,
+    "title": "Frankenstein",
+    "author": "Mary Shelley",
+    "year": 1818,
+    "chapter": "Letter 1",
+    "excerpt": "You will rejoice to hear that no disaster has accompanied the commencement of an enterprise which you have regarded with such evil forebodings. I arrived here yesterday, and my first task is to assure my dear sister of my welfare and increasing confidence in the success of my undertaking."
+  },
+  {
+    "id": "dorian",
+    "gid": 174,
+    "title": "The Picture of Dorian Gray",
+    "author": "Oscar Wilde",
+    "year": 1890,
+    "chapter": "Chapter I",
+    "excerpt": "The studio was filled with the rich odour of roses, and when the light summer wind stirred amidst the trees of the garden, there came through the open door the heavy scent of the lilac, or the more delicate perfume of the pink-flowering thorn."
+  },
+  {
+    "id": "dracula",
+    "gid": 345,
+    "title": "Dracula",
+    "author": "Bram Stoker",
+    "year": 1897,
+    "chapter": "Chapter I. Jonathan Harker’s Journal",
+    "excerpt": "3 May. Bistritz.—Left Munich at 8:35 P. M., on 1st May, arriving at Vienna early next morning; should have arrived at 6:46, but train was an hour late. Buda-Pesth seems a wonderful place, from the glimpse which I got of it from the train and the little I could walk through the streets."
+  },
+  {
+    "id": "meditations",
+    "gid": 2680,
+    "title": "Meditations",
+    "author": "Marcus Aurelius",
+    "year": 180,
+    "chapter": "The First Book",
+    "excerpt": "From my grandfather Verus I learned good morals and the government of my temper. From the reputation and remembrance of my father, modesty and a manly character. From my mother, piety and beneficence, and abstinence, not only from evil deeds, but even from evil thoughts."
+  },
+  {
+    "id": "metamorphosis",
+    "gid": 5200,
+    "title": "The Metamorphosis",
+    "author": "Franz Kafka",
+    "year": 1915,
+    "chapter": "I",
+    "excerpt": "One morning, when Gregor Samsa woke from troubled dreams, he found himself transformed in his bed into a horrible vermin. He lay on his armour-like back, and if he lifted his head a little he could see his brown belly, slightly domed and divided by arches into stiff sections."
+  },
+  {
+    "id": "alice",
+    "gid": 11,
+    "title": "Alice’s Adventures in Wonderland",
+    "author": "Lewis Carroll",
+    "year": 1865,
+    "chapter": "Chapter I. Down the Rabbit-Hole",
+    "excerpt": "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, “and what is the use of a book,” thought Alice “without pictures or conversations?”"
+  }
+]
