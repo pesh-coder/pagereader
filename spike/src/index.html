@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pagestream — tier-1 probe</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg">
+  <style>
+    body{max-width:64rem;margin:0 auto;padding:24px;font:18px/1.6 Georgia,serif;color:#221d18;background:white}header,nav,section{border-bottom:1px solid #cfc5b4;padding:16px 0}h1{font-size:28px}button,input,select,textarea{font:inherit;min-height:44px;border:1px solid #221d18;border-radius:0;background:white;color:inherit;padding:6px 10px}button{cursor:pointer}button:hover{background:#eae2d3}button:disabled{cursor:wait}article{max-width:35em;margin:24px auto}label{display:block;margin:8px 0}textarea{width:90%;min-height:100px}#status,#spent{position:sticky;top:0;background:#eae2d3;padding:8px}#error{color:#8e1f14}pre{font:14px/1.5 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}details{margin:16px 0}a{color:inherit}#notes{max-width:60rem} :focus-visible{outline:2px solid #221d18;outline-offset:3px}
+  </style>
+</head>
+<body>
+  <header><h1>Pagestream · tier-1 probe</h1><p>Throwaway research harness. Pages 1–2 are public. Requesting page 3 starts the wallet flow; later unowned pages cost 5 sats plus network fees. No paid prefetch.</p></header>
+  <div id="status" role="status" aria-live="polite">Loading public preview…</div>
+  <p id="spent" aria-live="polite">Free preview · no wallet calls</p><p id="error" role="alert"></p>
+  <main>
+    <label>Edition for this research run <select id="edition-select" aria-label="Edition for this research run"></select></label>
+    <h2 id="title"></h2><p id="page-number"></p><article id="page"></article>
+    <nav aria-label="Pages"><button id="previous">← Previous</button> <button id="next">Next page →</button></nav>
+    <section><p id="permission-copy"></p><p id="identity">Wallet identity is not requested during the free preview.</p>
+      <button id="reconcile" hidden>Check existing purchase (no new payment)</button>
+      <button id="resume" hidden>Read last displayed page from this wallet</button>
+      <label>Page to request <input id="jump-page" type="number" min="1" value="3"></label><button id="jump">Request this page</button>
+    </section>
+    <section aria-label="Controlled native permission review">
+      <h2>Native permission review · cancel only</h2>
+      <p>Operator test: show the native allowance request without requesting a paid page. Do not approve a grant. Record its wording, amount, scope and any setup cost, then cancel or deny it.</p>
+      <button id="permission-review">Inspect native request · cancel only</button>
+      <pre id="permission-review-result" aria-live="polite"></pre>
+    </section>
+    <details id="notes"><summary>Prompt diary and run evidence</summary>
+      <p>Record every native wallet prompt, including identity, signing, key access, peer trust and spending. Wallet calls are not prompt counts. No secrets or recovery phrases.</p>
+      <label>Wallet <select id="wallet-name"><option>Unrecorded</option><option>BSV Desktop</option><option>BSV Browser</option></select></label>
+      <label>Wallet app version <input id="wallet-version" placeholder="Version shown in wallet settings"></label>
+      <label>Device / origin / clean grant state <input id="device-note" placeholder="Laptop; grants revoked; first visit"></label>
+      <label>Prompt type and exact observed wording/options <textarea id="prompt-note"></textarea></label>
+      <button id="add-prompt">Record one observed prompt</button><p id="prompt-count">0 recorded prompts (not a measured zero)</p>
+      <label>Observed grant scope, expiry, fee treatment and tab-reopen behavior <textarea id="grant-note"></textarea></label>
+      <p>Export before closing this tab, then again after reopening. The wallet never gets called automatically on reload. Exported records can contain public identity keys and txids; keep evidence local.</p>
+      <button id="export">Download evidence JSON</button><pre id="diagnostics"></pre>
+    </details>
+  </main>
+  <footer><p>Text: <a href="https://www.gutenberg.org/ebooks/1661">Project Gutenberg #1661</a>. Full source and notices are preserved in the spike data folder.</p></footer>
+  <script type="module" src="/client.js"></script>
+</body></html>
