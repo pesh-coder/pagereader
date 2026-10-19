@@ -1,0 +1,17 @@
+{
+  "id": "/reader/",
+  "name": "Pagestream",
+  "short_name": "Pagestream",
+  "description": "Read a classic, one page at a time.",
+  "lang": "en",
+  "start_url": "/reader/",
+  "scope": "/reader/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/pagestream-pilcrow-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/pagestream-pilcrow-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/pagestream-pilcrow-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
