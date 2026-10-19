@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pagestream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&amp;display=swap">
+<style>
+:root{--paper:#FFFFFF;--shade:#EAE2D3;--ink:#221D18;--pencil:#6E655B;--rubric:#B4441C;--rule:#CFC5B4;--error:#8E1F14}
+:root[data-theme=night]{--paper:#1F1A15;--shade:#2A241D;--ink:#E9E0D0;--pencil:#A89C8B;--rubric:#E0784A;--rule:#3B342B;--error:#E58A7C}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:Literata,Georgia,serif;-webkit-text-size-adjust:100%}
+a{color:var(--ink);text-decoration-thickness:1px;text-underline-offset:3px}
+a:hover{background:var(--shade);text-decoration-thickness:2px}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--paper);color:var(--ink);font-family:Literata,Georgia,serif">
+
+<sc-if value="{{ isPlain }}" hint-placeholder-val="{{ true }}">
+<header style="border-bottom:1px solid var(--ink)">
+<div style="max-width:1200px;margin:0 auto;padding:18px 20px 14px;display:flex;align-items:center;gap:10px">
+<sc-if value="{{ isCatalogue }}" hint-placeholder-val="{{ true }}">
+<h1 style="margin:0;font-weight:400"><a href="#" onClick="{{ goCatalogue }}" style="display:flex;align-items:center;gap:10px;text-decoration:none;font-family:'IM Fell English',serif;font-size:30px;line-height:1"><span aria-hidden="true" style="font-size:32px;line-height:1">¶</span>Pagestream</a></h1>
+</sc-if>
+<sc-if value="{{ notCatalogue }}" hint-placeholder-val="{{ false }}">
+<a href="#" onClick="{{ goCatalogue }}" style="display:flex;align-items:center;gap:10px;text-decoration:none;font-family:'IM Fell English',serif;font-size:30px;line-height:1"><span aria-hidden="true" style="font-size:32px;line-height:1">¶</span>Pagestream</a>
+</sc-if>
+</div>
+</header>
+</sc-if>
+
+<sc-if value="{{ isCatalogue }}" hint-placeholder-val="{{ true }}">
+<main style="max-width:1200px;margin:0 auto;padding:0 20px">
+<p style="margin:0;padding:22px 0 22px;max-width:36em;font-size:18px;line-height:1.55;text-wrap:pretty">Classic books, paid by the page. First two pages of every book are free. <span style="color:var(--rubric)">5 sats</span> a page after that. No account.</p>
+<div style="display:flex;gap:48px;align-items:flex-start">
+<nav aria-label="Books" style="flex:1 1 0;min-width:0">
+<ol style="list-style:none;margin:0;padding:0;border-top:1px solid var(--ink)">
+<sc-for list="{{ books }}" as="b" hint-placeholder-count="8">
+<li style="border-bottom:1px solid var(--rule)">
+<a href="#" onClick="{{ b.open }}" aria-current="{{ b.current }}" style="display:grid;grid-template-columns:6px 1.8em minmax(0,1fr);gap:0 12px;padding:16px 10px 16px 0;text-decoration:none;color:inherit;background:{{ b.bg }};box-shadow:{{ b.shadow }}" style-hover="background:var(--shade);box-shadow:inset 0 -1px 0 var(--ink)">
+<span aria-hidden="true" style="background:{{ b.cloth }};align-self:stretch"></span>
+<span style="font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;font-size:16px;color:var(--pencil);padding-top:8px">{{ b.num }}</span>
+<span style="display:flex;flex-direction:column;gap:5px;min-width:0">
+<span style="font-family:'IM Fell English',serif;font-size:28px;line-height:1.12;text-wrap:balance">{{ b.title }}</span>
+<span style="font-size:16px;color:var(--pencil)">{{ b.author }}</span>
+<span style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:4px">
+<span style="display:inline-block;border:1px solid var(--rubric);color:var(--rubric);padding:0 7px 2px;font-variant-caps:all-small-caps;letter-spacing:.07em;font-size:15px;transform:rotate(-2deg);white-space:nowrap;flex:none">Free preview</span>
+<span style="font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em;font-size:15px">≈ {{ b.pages }} pages · whole book <span style="color:var(--rubric)">≈ {{ b.total }} sats</span></span>
+</span>
+<sc-if value="{{ b.hasLast }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px;line-height:1.4">Continue at page {{ b.last }}, saved by your wallet, not an account.</span></sc-if>
+</span>
+</a>
+</li>
+</sc-for>
+</ol>
+</nav>
+<sc-if value="{{ wide }}" hint-placeholder-val="{{ false }}">
+<aside aria-label="Selected book" style="width:440px;flex:none;position:sticky;top:20px;border-top:1px solid var(--ink);padding-top:16px">
+<p style="margin:0 0 6px;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.05em;font-size:15px;color:var(--pencil)">{{ sel.author }} · {{ sel.year }} · Gutenberg #{{ sel.gid }}</p>
+<h2 style="font-family:'IM Fell English',serif;font-weight:400;font-size:36px;line-height:1.08;margin:0 0 14px;text-wrap:balance">{{ sel.title }}</h2>
+<p style="margin:0 0 8px;font-variant-caps:all-small-caps;letter-spacing:.06em;font-size:16px">{{ sel.chapter }} · opening lines</p>
+<p lang="en" style="margin:0 0 18px;font-size:18px;line-height:1.6;hyphens:auto;text-wrap:pretty">{{ sel.opening }}</p>
+<dl style="margin:0 0 18px;border-top:1px solid var(--rule)">
+<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px"><dt>Pages 1–2</dt><dd style="margin:0;font-variant-caps:all-small-caps;color:var(--rubric)">free</dd></div>
+<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px"><dt>Each page after</dt><dd style="margin:0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;color:var(--rubric)">5 sats</dd></div>
+<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px"><dt>Whole book, ≈ {{ sel.pages }} pages</dt><dd style="margin:0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;color:var(--rubric)">≈ {{ sel.total }} sats</dd></div>
+</dl>
+<button onClick="{{ readSel }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--shade);box-shadow:inset 0 -3px 0 var(--ink)">{{ sel.cta }}</button>
+</aside>
+</sc-if>
+</div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isReader }}" hint-placeholder-val="{{ false }}">
+<header style="position:sticky;top:0;z-index:5;background:var(--shade);border-bottom:1px solid var(--ink)">
+<div style="max-width:1200px;margin:0 auto;padding:4px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+<a href="#" onClick="{{ goCatalogue }}" style="font-size:16px;min-height:44px;display:flex;align-items:center;padding:0 6px">← Catalogue</a>
+<div role="group" aria-label="Text size" style="display:flex;gap:2px">
+<button onClick="{{ smaller }}" aria-label="Smaller text" style="min-width:44px;min-height:44px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:15px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">A−</button>
+<button onClick="{{ larger }}" aria-label="Larger text" style="min-width:44px;min-height:44px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:19px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">A+</button>
+</div>
+</div>
+<div style="border-top:1px solid var(--rule)">
+<div aria-live="polite" style="max-width:1200px;margin:0 auto;padding:8px 18px 10px;display:flex;justify-content:space-between;align-items:flex-end;gap:8px 16px;flex-wrap:wrap">
+<sc-if value="{{ isFree }}" hint-placeholder-val="{{ true }}">
+<p style="margin:0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.06em;font-size:19px;color:var(--rubric);padding:6px 0">Free preview · page {{ page }} of 2</p>
+</sc-if>
+<sc-if value="{{ isPaidView }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:0;display:flex;align-items:baseline;gap:8px;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em"><span style="font-size:16px">Spent</span><span style="font-size:28px;line-height:1.1;color:var(--rubric);background-image:linear-gradient(var(--rubric),var(--rubric));background-repeat:no-repeat;background-position:0 100%;background-size:{{ sweep }} 1px;transition:background-size 150ms ease-out;padding-bottom:2px">{{ spent }} sats</span></p>
+<p style="margin:2px 0 0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em;font-size:15px;color:var(--pencil)">{{ breakdown }}</p>
+</div>
+<p style="margin:0;display:flex;align-items:center;gap:8px;font-size:15px;padding-bottom:2px">
+<span style="font-variant-caps:all-small-caps;letter-spacing:.05em;padding:1px 8px 3px;border:1px solid {{ badgeBorder }};color:var(--ink)">{{ badge }}</span>
+<sc-if value="{{ badgeProvisional }}" hint-placeholder-val="{{ false }}"><span style="font-variant-caps:all-small-caps;letter-spacing:.05em;font-size:13px;color:var(--pencil)">provisional</span></sc-if>
+</p>
+</sc-if>
+</div>
+</div>
+<sc-if value="{{ isUnresolved }}" hint-placeholder-val="{{ false }}">
+<div style="border-top:1px solid var(--rule)">
+<div style="max-width:1200px;margin:0 auto;padding:10px 18px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px 16px;flex-wrap:wrap">
+<p style="margin:0;font-size:15px;line-height:1.45;max-width:30em">5 sats left your wallet for page {{ page }}, but the page didn't arrive. You won't pay for it twice.</p>
+<button onClick="{{ retry }}" style="min-height:44px;padding:0 14px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:15px" style-hover="background:var(--shade);box-shadow:inset 0 -3px 0 var(--ink)">Fetch page {{ page }} again</button>
+</div>
+</div>
+</sc-if>
+</header>
+
+<main style="max-width:1200px;margin:0 auto;padding:0 20px;display:flex;gap:72px;justify-content:center;align-items:flex-start">
+<article style="max-width:35em;width:100%;padding:24px 0 36px;opacity:{{ fade }};transition:opacity 60ms linear">
+<h1 style="font-family:'IM Fell English',serif;font-weight:400;font-size:32px;line-height:1.1;margin:0 0 8px;text-wrap:balance">{{ book.title }}</h1>
+<p style="margin:0 0 20px;padding-bottom:10px;border-bottom:1px solid var(--ink);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.05em;font-size:16px;color:var(--pencil)">{{ book.chapter }} · page {{ page }} of ≈ {{ book.pages }}</p>
+<sc-if value="{{ refetching }}" hint-placeholder-val="{{ false }}">
+<p style="margin:0 0 1em;font-size:18px;line-height:1.6">Your payment went through; fetching the page again (no extra charge).</p>
+</sc-if>
+<sc-if value="{{ showText }}" hint-placeholder-val="{{ true }}">
+<div lang="en" style="font-size:{{ fs }};line-height:1.6;text-align:left;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty">
+<sc-if value="{{ hasCap }}" hint-placeholder-val="{{ true }}">
+<p style="margin:0 0 1em"><span aria-hidden="true" style="float:left;font-family:'IM Fell English',serif;font-size:4em;line-height:.82;padding:6px 8px 0 0;color:var(--rubric)">{{ cap }}</span><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">{{ cap }}</span>{{ capRest }}</p>
+</sc-if>
+<sc-for list="{{ paras }}" as="t" hint-placeholder-count="3">
+<p style="margin:0 0 1em;text-indent:1.4em">{{ t }}</p>
+</sc-for>
+<sc-if value="{{ noText }}" hint-placeholder-val="{{ false }}">
+<p style="margin:0 0 1em;color:var(--pencil);font-size:17px">This prototype carries page 1 of this book only. Pages 2 onward follow the same price and flow as <em>The Adventures of Sherlock Holmes</em>.</p>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ pPermission }}" hint-placeholder-val="{{ false }}">
+<section aria-labelledby="perm-h" style="margin:24px 0 0;background:var(--shade);border-top:1px solid var(--ink);padding:18px 18px 22px">
+<p style="margin:0 0 8px;font-variant-caps:all-small-caps;letter-spacing:.06em;font-size:14px;color:var(--pencil)">Provisional copy · wallet limit under test</p>
+<h2 id="perm-h" style="margin:0 0 10px;font-size:20px;font-weight:600;line-height:1.35">Page 3 onward costs <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;font-weight:400;font-size:22px">5 sats</span> a page.</h2>
+<p style="margin:0 0 18px;font-size:17px;line-height:1.55">Your wallet will ask you once to let Pagestream spend up to <span style="font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;color:var(--rubric)">5,000 sats</span>. You only pay for pages you open.</p>
+<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+<button onClick="{{ toWallet }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -3px 0 var(--ink)">Continue to page 3 · <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums">5 sats</span></button>
+<button onClick="{{ closePanel }}" style="min-height:48px;padding:0 12px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">← Stay on page 2</button>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ pNoWallet }}" hint-placeholder-val="{{ false }}">
+<section aria-labelledby="nw-h" style="margin:24px 0 0;background:var(--shade);border-top:1px solid var(--ink);padding:18px 18px 22px">
+<h2 id="nw-h" style="margin:0 0 10px;font-size:20px;font-weight:600;line-height:1.35">To read past page 2 you need a BSV wallet</h2>
+<p style="margin:0 0 12px;font-size:17px;line-height:1.55">BSV Desktop on a computer, BSV Browser on a phone. Pages 1 and 2 stay free here.</p>
+<ul style="list-style:none;margin:0 0 16px;padding:0;border-top:1px solid var(--rule)">
+<li style="border-bottom:1px solid var(--rule)"><a href="#" style="display:flex;justify-content:space-between;min-height:48px;align-items:center;padding:0 4px;font-size:17px">BSV Desktop <span style="color:var(--pencil);font-size:15px">for a computer →</span></a></li>
+<li style="border-bottom:1px solid var(--rule)"><a href="#" style="display:flex;justify-content:space-between;min-height:48px;align-items:center;padding:0 4px;font-size:17px">BSV Browser <span style="color:var(--pencil);font-size:15px">for a phone →</span></a></li>
+</ul>
+<button onClick="{{ closePanel }}" style="min-height:48px;padding:0 12px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">← Back to page 2</button>
+</section>
+</sc-if>
+
+<sc-if value="{{ pDeclined }}" hint-placeholder-val="{{ false }}">
+<section aria-labelledby="dc-h" style="margin:24px 0 0;background:var(--shade);border-top:1px solid var(--ink);padding:18px 18px 22px">
+<h2 id="dc-h" style="margin:0 0 10px;font-size:20px;font-weight:600;line-height:1.35;color:var(--error)">Wallet declined</h2>
+<p style="margin:0 0 16px;font-size:17px;line-height:1.55">No payment was made. You can keep reading pages 1–2, or try again.</p>
+<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+<button onClick="{{ toWallet }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -3px 0 var(--ink)">Try again · <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums">5 sats</span></button>
+<button onClick="{{ toPageOne }}" style="min-height:48px;padding:0 12px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">← Back to page 1</button>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ pLowFunds }}" hint-placeholder-val="{{ false }}">
+<section aria-labelledby="lf-h" style="margin:24px 0 0;background:var(--shade);border-top:1px solid var(--ink);padding:18px 18px 22px">
+<h2 id="lf-h" style="margin:0 0 10px;font-size:20px;font-weight:600;line-height:1.35;color:var(--error)">Not enough funds</h2>
+<p style="margin:0 0 16px;font-size:17px;line-height:1.55">Your wallet doesn't have enough to pay <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums">5 sats</span>. No payment was made.</p>
+<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+<button onClick="{{ toWallet }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -3px 0 var(--ink)">Try again · <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums">5 sats</span></button>
+<button onClick="{{ closePanel }}" style="min-height:48px;padding:0 12px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:17px" style-hover="background:var(--paper);box-shadow:inset 0 -1px 0 var(--ink)">← Stay on page 2</button>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
+<nav aria-label="Pages" style="margin-top:24px;padding-top:16px;border-top:1px solid var(--ink);display:flex;justify-content:space-between;align-items:center;gap:12px">
+<sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}">
+<button onClick="{{ prev }}" style="min-height:48px;padding:0 12px;border:0;border-radius:0;background:transparent;cursor:pointer;font-size:17px" style-hover="background:var(--shade);box-shadow:inset 0 -1px 0 var(--ink)">← Previous</button>
+</sc-if>
+<sc-if value="{{ noPrev }}" hint-placeholder-val="{{ true }}"><span></span></sc-if>
+<sc-if value="{{ hasNext }}" hint-placeholder-val="{{ true }}">
+<button onClick="{{ next }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--shade);box-shadow:inset 0 -3px 0 var(--ink)">Next page <span style="color:{{ nextColor }};font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.03em">{{ nextLabel }}</span></button>
+</sc-if>
+<sc-if value="{{ atEnd }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px;color:var(--pencil);text-align:right">End of the prototype sample · the book runs to ≈ {{ book.pages }} pages</span></sc-if>
+</nav>
+</sc-if>
+</article>
+
+<sc-if value="{{ wide }}" hint-placeholder-val="{{ false }}">
+<aside aria-label="Pages in this book" style="width:280px;flex:none;position:sticky;top:150px;padding:24px 0">
+<p style="margin:0 0 8px;font-variant-caps:all-small-caps;letter-spacing:.06em;font-size:15px;color:var(--pencil)">Pages in this book</p>
+<ul style="list-style:none;margin:0 0 16px;padding:0;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule)">
+<sc-for list="{{ index }}" as="x" hint-placeholder-count="6">
+<li style="display:flex;justify-content:space-between;gap:12px;padding:7px 8px;border-top:1px solid var(--rule);font-size:15px;background:{{ x.bg }};box-shadow:{{ x.shadow }}"><span>Page {{ x.n }}</span><span style="font-variant-caps:all-small-caps;letter-spacing:.04em;color:{{ x.color }}">{{ x.state }}</span></li>
+</sc-for>
+</ul>
+<p style="margin:0;font-size:15px;line-height:1.5;color:var(--pencil)">Owned pages open free with the same wallet, on any device.</p>
+</aside>
+</sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{ isContinue }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:1200px;margin:0 auto;padding:28px 20px 40px">
+<article style="max-width:34em">
+<h1 style="font-family:'IM Fell English',serif;font-weight:400;font-size:34px;line-height:1.1;margin:0 0 14px">Continue on another device</h1>
+<p style="margin:0 0 18px;font-size:18px;line-height:1.6;text-wrap:pretty">Open Pagestream in BSV Browser or BSV Desktop with the same wallet. Your place is saved by your wallet, not an account, so there is nothing to log in to.</p>
+<div style="border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:14px 0;margin:0 0 20px">
+<p style="margin:0 0 4px;font-family:'IM Fell English',serif;font-size:28px;line-height:1.15">{{ book.title }}</p>
+<p style="margin:0;font-size:17px">Continue at page {{ resumePage }}, saved by your wallet, not an account.</p>
+</div>
+<h2 style="margin:0 0 8px;font-variant-caps:all-small-caps;letter-spacing:.06em;font-size:16px;font-weight:400;color:var(--pencil)">Page index · {{ ownedCount }} owned</h2>
+<ol style="list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:0;border-top:1px solid var(--ink);border-left:1px solid var(--rule)">
+<sc-for list="{{ index }}" as="x" hint-placeholder-count="6">
+<li style="padding:10px 10px 12px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);background:{{ x.bg }};box-shadow:{{ x.shadow }}"><span style="display:block;font-variant-numeric:tabular-nums lining-nums;font-size:18px">{{ x.n }}</span><span style="font-variant-caps:all-small-caps;letter-spacing:.04em;font-size:14px;color:{{ x.color }}">{{ x.state }}</span></li>
+</sc-for>
+</ol>
+<p style="margin:0 0 8px;font-variant-caps:all-small-caps;letter-spacing:.05em;color:var(--pencil);font-size:16px">Link to this page</p>
+<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
+<code style="flex:1 1 220px;font-family:Literata,serif;font-size:16px;padding:12px;border:1px solid var(--rule);background:var(--shade);word-break:break-all">{{ link }}</code>
+<button onClick="{{ copyLink }}" style="min-height:48px;padding:0 18px;border:1px solid var(--ink);border-radius:0;background:var(--paper);cursor:pointer;font-size:17px" style-hover="background:var(--shade);box-shadow:inset 0 -3px 0 var(--ink)">{{ copyLabel }}</button>
+</div>
+</article>
+</main>
+</sc-if>
+
+<sc-if value="{{ isTerms }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:1200px;margin:0 auto;padding:28px 20px 40px">
+<article style="max-width:34em;font-size:17px;line-height:1.6">
+<h1 style="font-family:'IM Fell English',serif;font-weight:400;font-size:34px;line-height:1.1;margin:0 0 6px">Terms</h1>
+<p style="margin:0 0 22px;font-variant-caps:all-small-caps;letter-spacing:.05em;color:var(--pencil);font-size:16px">Demo terms · 4 sections</p>
+<h2 style="font-size:18px;font-weight:600;margin:0 0 4px;padding-top:12px;border-top:1px solid var(--ink)">The texts</h2>
+<p style="margin:0 0 18px">All eight books are public-domain texts from Project Gutenberg.</p>
+<h2 style="font-size:18px;font-weight:600;margin:0 0 4px;padding-top:12px;border-top:1px solid var(--rule)">The price</h2>
+<p style="margin:0 0 18px">Pages 1 and 2 of every book are free. Every page after that costs <span style="color:var(--rubric);font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums">5 sats</span>, the same for every book. Each page is paid from your own BSV wallet when you open it.</p>
+<h2 style="font-size:18px;font-weight:600;margin:0 0 4px;padding-top:12px;border-top:1px solid var(--rule)">Payments are final</h2>
+<p style="margin:0 0 18px">There are no refunds in this demo. A page you paid for stays yours and reopens free with the same wallet.</p>
+<h2 style="font-size:18px;font-weight:600;margin:0 0 4px;padding-top:12px;border-top:1px solid var(--rule)">Your wallet is your account</h2>
+<p style="margin:0 0 18px">There is no sign-up, email, password, card or subscription.</p>
+</article>
+</main>
+</sc-if>
+
+<sc-if value="{{ isPrivacy }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:1200px;margin:0 auto;padding:28px 20px 40px">
+<article style="max-width:34em;font-size:17px;line-height:1.6">
+<h1 style="font-family:'IM Fell English',serif;font-weight:400;font-size:34px;line-height:1.1;margin:0 0 6px">Privacy</h1>
+<p style="margin:0 0 22px;font-variant-caps:all-small-caps;letter-spacing:.05em;color:var(--pencil);font-size:16px">3 things stored · nothing else</p>
+<p style="margin:0 0 18px">We store your wallet's public identity key, the pages you bought, and your bookmark. Nothing else.</p>
+<dl style="margin:0 0 22px;border-top:1px solid var(--ink)">
+<div style="padding:10px 0;border-bottom:1px solid var(--rule)"><dt style="font-weight:600">Public identity key</dt><dd style="margin:0">So the same wallet finds its pages on any device.</dd></div>
+<div style="padding:10px 0;border-bottom:1px solid var(--rule)"><dt style="font-weight:600">Pages you bought</dt><dd style="margin:0">Book and page number, so you never pay twice.</dd></div>
+<div style="padding:10px 0;border-bottom:1px solid var(--rule)"><dt style="font-weight:600">Bookmark</dt><dd style="margin:0">Your last page in each book.</dd></div>
+</dl>
+<p style="margin:0">No cookies for tracking, no email, no name.</p>
+</article>
+</main>
+</sc-if>
+
+<sc-if value="{{ pPrompt }}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-modal="true" aria-label="Wallet prompt" style="position:fixed;inset:0;z-index:20;background:rgba(31,26,21,.55);display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+<p style="margin:0 0 8px;padding:4px 10px;background:var(--paper);color:var(--ink);font-size:14px">Stand-in for the wallet's own prompt</p>
+<div style="width:100%;max-width:440px;background:#FFFFFF;color:#1C1C1E;font-family:-apple-system,system-ui,sans-serif;border-radius:14px 14px 0 0;padding:20px 20px 28px">
+<div style="font-size:13px;color:#6B6B70;margin-bottom:6px">BSV Browser</div>
+<div style="font-size:18px;font-weight:600;margin-bottom:6px">Allow pagestream.app to spend up to 5,000 sats?</div>
+<div style="font-size:15px;line-height:1.45;color:#3A3A3C;margin-bottom:18px">It charges 5 sats per page you open.</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<button onClick="{{ decline }}" style="min-height:48px;border:0;border-radius:10px;background:#E9E9EB;color:#1C1C1E;font:600 16px system-ui,sans-serif;cursor:pointer">Decline</button>
+<button onClick="{{ approve }}" style="min-height:48px;border:0;border-radius:10px;background:#1C1C1E;color:#FFFFFF;font:600 16px system-ui,sans-serif;cursor:pointer">Allow</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<footer style="border-top:1px solid var(--ink);margin-top:8px">
+<div style="max-width:1200px;margin:0 auto;padding:16px 20px 28px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline;font-size:15px">
+<nav aria-label="Site" style="display:flex;flex-wrap:wrap;gap:4px 18px">
+<a href="#" onClick="{{ goTerms }}">Terms</a>
+<a href="#" onClick="{{ goPrivacy }}">Privacy</a>
+<a href="#" onClick="{{ goContinue }}">Continue on another device</a>
+</nav>
+<span style="color:var(--pencil)">Texts from Project Gutenberg · 5 sats a page · paid in BSV</span>
+</div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;walletScenario&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wallet&quot;,&quot;no-wallet&quot;,&quot;declines&quot;,&quot;low-funds&quot;,&quot;unconfirmed&quot;,&quot;load-fails&quot;],&quot;default&quot;:&quot;wallet&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;night&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+const PRICE = 5, FEE = 1, FREE = 2, LAST = 6;
+const BOOKS = [
+  { id: 'holmes', gid: 1661, title: 'The Adventures of Sherlock Holmes', author: 'Arthur Conan Doyle', year: 1892, pages: 330, cloth: '#3F5A4A', chapter: 'I. A Scandal in Bohemia' },
+  { id: 'pride', gid: 1342, title: 'Pride and Prejudice', author: 'Jane Austen', year: 1813, pages: 385, cloth: '#8A6A3A', chapter: 'Chapter I', text: 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife. However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered the rightful property of some one or other of their daughters.' },
+  { id: 'frankenstein', gid: 84, title: 'Frankenstein', author: 'Mary Shelley', year: 1818, pages: 235, cloth: '#55534A', chapter: 'Letter 1', text: 'You will rejoice to hear that no disaster has accompanied the commencement of an enterprise which you have regarded with such evil forebodings. I arrived here yesterday, and my first task is to assure my dear sister of my welfare and increasing confidence in the success of my undertaking.' },
+  { id: 'dorian', gid: 174, title: 'The Picture of Dorian Gray', author: 'Oscar Wilde', year: 1890, pages: 245, cloth: '#4A2E3E', chapter: 'Chapter I', text: 'The studio was filled with the rich odour of roses, and when the light summer wind stirred amidst the trees of the garden, there came through the open door the heavy scent of the lilac, or the more delicate perfume of the pink-flowering thorn.' },
+  { id: 'dracula', gid: 345, title: 'Dracula', author: 'Bram Stoker', year: 1897, pages: 505, cloth: '#6B2A22', chapter: 'Chapter I. Jonathan Harker’s Journal', text: '3 May. Bistritz.—Left Munich at 8:35 P. M., on 1st May, arriving at Vienna early next morning; should have arrived at 6:46, but train was an hour late. Buda-Pesth seems a wonderful place, from the glimpse which I got of it from the train and the little I could walk through the streets.' },
+  { id: 'meditations', gid: 2680, title: 'Meditations', author: 'Marcus Aurelius', year: 180, pages: 205, cloth: '#2F4058', chapter: 'The First Book', text: 'From my grandfather Verus I learned good morals and the government of my temper. From the reputation and remembrance of my father, modesty and a manly character. From my mother, piety and beneficence, and abstinence, not only from evil deeds, but even from evil thoughts.' },
+  { id: 'metamorphosis', gid: 5200, title: 'The Metamorphosis', author: 'Franz Kafka', year: 1915, pages: 70, cloth: '#6E7F86', chapter: 'I', text: 'One morning, when Gregor Samsa woke from troubled dreams, he found himself transformed in his bed into a horrible vermin. He lay on his armour-like back, and if he lifted his head a little he could see his brown belly, slightly domed and divided by arches into stiff sections.' },
+  { id: 'alice', gid: 11, title: 'Alice’s Adventures in Wonderland', author: 'Lewis Carroll', year: 1865, pages: 85, cloth: '#9C7B5A', chapter: 'Chapter I. Down the Rabbit-Hole', text: 'Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, “and what is the use of a book,” thought Alice “without pictures or conversations?”' }
+];
+const HOLMES = [
+  ['To Sherlock Holmes she is always the woman. I have seldom heard him mention her under any other name. In his eyes she eclipses and predominates the whole of her sex. It was not that he felt any emotion akin to love for Irene Adler. All emotions, and that one particularly, were abhorrent to his cold, precise but admirably balanced mind. He was, I take it, the most perfect reasoning and observing machine that the world has seen, but as a lover he would have placed himself in a false position.',
+   'He never spoke of the softer passions, save with a gibe and a sneer. They were admirable things for the observer—excellent for drawing the veil from men’s motives and actions. But for the trained reasoner to admit such intrusions into his own delicate and finely adjusted temperament was to introduce a distracting factor which might throw a doubt upon all his mental results. And yet there was but one woman to him, and that woman was the late Irene Adler, of dubious and questionable memory.'],
+  ['I had seen little of Holmes lately. My marriage had drifted us away from each other. My own complete happiness, and the home-centred interests which rise up around the man who first finds himself master of his own establishment, were sufficient to absorb all my attention, while Holmes, who loathed every form of society with his whole Bohemian soul, remained in our lodgings in Baker Street, buried among his old books, and alternating from week to week between cocaine and ambition, the drowsiness of the drug, and the fierce energy of his own keen nature.',
+   'He was still, as ever, deeply attracted by the study of crime, and occupied his immense faculties and extraordinary powers of observation in following out those clues, and clearing up those mysteries which had been abandoned as hopeless by the official police.'],
+  ['From time to time I heard some vague account of his doings: of his summons to Odessa in the case of the Trepoff murder, of his clearing up of the singular tragedy of the Atkinson brothers at Trincomalee, and finally of the mission which he had accomplished so delicately and successfully for the reigning family of Holland.',
+   'One night—it was on the twentieth of March, 1888—I was returning from a journey to a patient (for I had now returned to civil practice), when my way led me through Baker Street. As I passed the well-remembered door, which must always be associated in my mind with my wooing, and with the dark incidents of the Study in Scarlet, I was seized with a keen desire to see Holmes again, and to know how he was employing his extraordinary powers.'],
+  ['His rooms were brilliantly lit, and, even as I looked up, I saw his tall, spare figure pass twice in a dark silhouette against the blind. He was pacing the room swiftly, eagerly, with his head sunk upon his chest and his hands clasped behind him. To me, who knew his every mood and habit, his attitude and manner told their own story. He was at work again.',
+   'His manner was not effusive. It seldom was; but he was glad, I think, to see me. With hardly a word spoken, but with a kindly eye, he waved me to an armchair, threw across his case of cigars, and indicated a spirit case and a gasogene in the corner. Then he stood before the fire and looked me over in his singular introspective fashion.'],
+  ['“Wedlock suits you,” he remarked. “I think, Watson, that you have put on seven and a half pounds since I saw you.”', '“Seven!” I answered.', '“Indeed, I should have thought a little more. Just a trifle more, I fancy, Watson. And in practice again, I observe. You did not tell me that you intended to go into harness.”', '“Then, how do you know?”', '“I see it, I deduce it. How do I know that you have been getting yourself very wet lately, and that you have a most clumsy and careless servant girl?”'],
+  ['“My dear Holmes,” said I, “this is too much. You would certainly have been burned, had you lived a few centuries ago. It is true that I had a country walk on Thursday and came home in a dreadful mess, but as I have changed my clothes I can’t imagine how you deduce it.”', 'He chuckled to himself and rubbed his long, nervous hands together.']
+];
+BOOKS[0].text = HOLMES[0][0];
+const fmt = n => n.toLocaleString('en-GB');
+
+class Component extends DCLogic {
+  state = this.init();
+  init() {
+    const h = new URLSearchParams((typeof location !== 'undefined' ? location.hash : '').slice(1));
+    const b = h.get('b') || 'holmes', page = +(h.get('p') || 1), n = +(h.get('paid') || 0);
+    const paid = []; for (let i = FREE + 1; i <= FREE + n; i++) paid.push(i);
+    return { view: h.get('v') || 'catalogue', bookId: b, sel: b, page, paid: { [b]: paid },
+      last: h.get('last') ? { [b]: +h.get('last') } : {},
+      status: h.get('st') || (page <= FREE ? 'free' : 'confirmed'), panel: h.get('panel') || null,
+      approved: n > 0, wide: typeof window !== 'undefined' && window.innerWidth >= 960,
+      copied: false, scen: h.get('s'), theme: h.get('theme'), fs: 19, fade: 1, sweep: '0%' };
+  }
+  componentDidMount() {
+    this.onR = () => this.setState({ wide: window.innerWidth >= 960 });
+    window.addEventListener('resize', this.onR);
+    this.applyTheme();
+    if (this.state.panel) setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 400);
+  }
+  componentDidUpdate() { this.applyTheme(); }
+  componentWillUnmount() { window.removeEventListener('resize', this.onR); clearTimeout(this.t); clearTimeout(this.t2); }
+  applyTheme() { document.documentElement.dataset.theme = this.state.theme || this.props.theme || 'light'; }
+  scenario() { return this.state.scen || this.props.walletScenario || 'wallet'; }
+  paidList() { return this.state.paid[this.state.bookId] || []; }
+  toBottom() { setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 30); }
+  turn(patch) {
+    clearTimeout(this.t); clearTimeout(this.tf);
+    this.setState({ fade: 0, ...('page' in patch ? { page: patch.page } : {}) });
+    this.tf = setTimeout(() => { this.setState({ ...patch, fade: 1 }); window.scrollTo(0, 0); }, 60);
+  }
+  tick() { this.setState({ sweep: '100%' }); clearTimeout(this.t2); this.t2 = setTimeout(() => this.setState({ sweep: '0%' }), 700); }
+  go(view) { return e => { e && e.preventDefault(); clearTimeout(this.t); this.setState(s => ({ view, panel: null, last: s.view === 'reader' ? { ...s.last, [s.bookId]: s.page } : s.last })); window.scrollTo(0, 0); }; }
+  read(id) {
+    const p = this.state.last[id] || 1;
+    this.setState({ view: 'reader', bookId: id, page: p, panel: null, status: p <= FREE ? 'free' : 'owned' }); window.scrollTo(0, 0);
+  }
+  openBook(id) { return e => { e.preventDefault(); if (this.state.wide) this.setState({ sel: id }); else this.read(id); }; }
+  pay(n) {
+    const s = this.scenario(), first = this.paidList().length === 0;
+    this.setState(st => ({ paid: { ...st.paid, [st.bookId]: [...(st.paid[st.bookId] || []), n] }, panel: null }));
+    this.turn({ page: n, status: s === 'load-fails' ? 'refetch' : 'confirming' });
+    clearTimeout(this.t);
+    this.t = setTimeout(() => {
+      if (this.state.page !== n) return;
+      this.setState({ status: s === 'unconfirmed' ? 'unresolved' : first ? 'first' : 'confirmed' });
+      if (s !== 'unconfirmed') this.tick();
+    }, s === 'load-fails' ? 2000 : 1200);
+  }
+  next = () => {
+    const { page, approved } = this.state; if (page >= LAST) return;
+    const np = page + 1;
+    if (np <= FREE) return this.turn({ page: np, status: 'free', panel: null });
+    if (this.paidList().includes(np)) return this.turn({ page: np, status: 'owned', panel: null });
+    if (!approved) { this.setState({ panel: this.scenario() === 'no-wallet' ? 'noWallet' : 'permission' }); this.toBottom(); return; }
+    this.pay(np);
+  };
+  prev = () => { const p = this.state.page - 1; this.turn({ page: p, status: p <= FREE ? 'free' : 'owned', panel: null }); };
+  toWallet = () => this.setState({ panel: 'prompt' });
+  approve = () => {
+    if (this.scenario() === 'low-funds') { this.setState({ panel: 'lowFunds' }); this.toBottom(); return; }
+    this.setState({ approved: true }); this.pay(this.state.page + 1);
+  };
+  decline = () => { this.setState({ panel: 'declined' }); this.toBottom(); };
+  retry = () => { const n = this.state.page; this.setState({ status: 'refetch' }); clearTimeout(this.t); this.t = setTimeout(() => { if (this.state.page !== n) return; this.setState({ status: 'confirmed' }); this.tick(); }, 1500); };
+
+  renderVals() {
+    const st = this.state, book = BOOKS.find(b => b.id === st.bookId) || BOOKS[0], page = st.page;
+    const paid = this.paidList(), spent = paid.length * (PRICE + FEE);
+    let paras = book.id === 'holmes' ? (HOLMES[page - 1] || []).slice() : page === 1 ? [book.text] : [];
+    let cap = '', capRest = '';
+    if (page === 1 && paras.length) { const f = paras.shift(); cap = f[0]; capRest = f.slice(1); }
+    const status = page <= FREE ? 'free' : st.status;
+    const badge = { first: 'First paid page', confirming: 'Confirming…', confirmed: `Page ${page} confirmed`, unresolved: '1 payment unresolved', owned: `Page ${page} · owned`, refetch: `Fetching page ${page}` }[status] || '';
+    const np = page + 1, nextOwned = paid.includes(np), nextFree = np <= FREE;
+    const lastPaid = Math.max(LAST, ...paid);
+    const index = Array.from({ length: lastPaid }, (_, i) => {
+      const n = i + 1, own = paid.includes(n), here = st.view === 'reader' && n === page;
+      return { n, state: n <= FREE ? 'free' : own ? 'owned' : '5 sats', color: n <= FREE || !own ? 'var(--rubric)' : 'var(--ink)',
+        bg: own || here ? 'var(--shade)' : 'transparent', shadow: here ? 'inset 3px 0 0 var(--ink)' : 'none' };
+    });
+    const selB = BOOKS.find(b => b.id === st.sel) || BOOKS[0];
+    const v = st.view;
+    const panelOpen = !!st.panel && st.panel !== 'prompt';
+    return {
+      isCatalogue: v === 'catalogue', notCatalogue: v !== 'catalogue', isReader: v === 'reader', isContinue: v === 'continue', isTerms: v === 'terms', isPrivacy: v === 'privacy',
+      isPlain: v !== 'reader', wide: st.wide,
+      books: BOOKS.map((b, i) => {
+        const on = st.wide && b.id === st.sel;
+        return { ...b, num: String(i + 1).padStart(2, '0'), pages: fmt(b.pages), total: fmt((b.pages - FREE) * PRICE), hasLast: !!st.last[b.id], last: st.last[b.id], open: this.openBook(b.id),
+          current: on ? 'true' : 'false', bg: on ? 'var(--shade)' : 'transparent', shadow: on ? 'inset 0 -1px 0 var(--ink), inset 0 1px 0 var(--ink)' : 'none' };
+      }),
+      sel: { ...selB, pages: fmt(selB.pages), total: fmt((selB.pages - FREE) * PRICE), opening: selB.text, cta: st.last[selB.id] ? `Continue at page ${st.last[selB.id]}` : 'Read page 1 · free' },
+      readSel: () => this.read(st.sel),
+      book: { ...book, pages: fmt(book.pages) }, page, cap, capRest, paras, hasCap: page === 1 && !!cap,
+      noText: book.id !== 'holmes' && page > 1, refetching: status === 'refetch', showText: status !== 'refetch',
+      fs: st.fs + 'px', fade: st.fade, sweep: st.sweep,
+      smaller: () => this.setState(s => ({ fs: Math.max(17, s.fs - 1) })), larger: () => this.setState(s => ({ fs: Math.min(24, s.fs + 1) })),
+      isFree: status === 'free', isPaidView: status !== 'free',
+      spent: fmt(spent), breakdown: `${paid.length} ${paid.length === 1 ? 'page' : 'pages'} × 5 · fees ${fmt(paid.length * FEE)}`,
+      badge, badgeBorder: status === 'unresolved' ? 'var(--ink)' : 'transparent', badgeProvisional: status === 'confirming' || status === 'unresolved',
+      isUnresolved: v === 'reader' && status === 'unresolved',
+      index, ownedCount: paid.length,
+      showNav: !panelOpen, hasPrev: page > 1, noPrev: page <= 1,
+      hasNext: page < LAST, atEnd: page >= LAST,
+      nextLabel: nextFree ? '→' : nextOwned ? '· owned' : '· 5 sats',
+      nextColor: nextFree || nextOwned ? 'var(--ink)' : 'var(--rubric)',
+      pPermission: st.panel === 'permission', pNoWallet: st.panel === 'noWallet', pDeclined: st.panel === 'declined', pLowFunds: st.panel === 'lowFunds', pPrompt: st.panel === 'prompt',
+      next: this.next, prev: this.prev, toWallet: this.toWallet, approve: this.approve, decline: this.decline, retry: this.retry,
+      closePanel: () => this.setState({ panel: null }),
+      toPageOne: () => this.turn({ page: 1, status: 'free', panel: null }),
+      goCatalogue: this.go('catalogue'), goTerms: this.go('terms'), goPrivacy: this.go('privacy'), goContinue: this.go('continue'),
+      resumePage: st.last[book.id] || page,
+      link: `pagestream.app/read/${book.id}/${st.last[book.id] || page}`,
+      copyLabel: st.copied ? 'Copied' : 'Copy link',
+      copyLink: () => { try { navigator.clipboard.writeText(`https://pagestream.app/read/${book.id}/${st.last[book.id] || page}`); } catch (e) {} this.setState({ copied: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

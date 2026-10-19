@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pagestream · reader design review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/review.css">
+</head>
+<body>
+<div class="review-bar"><span>Design preview · payments simulated</span><div role="group" aria-label="Preview width"><button data-width="wide" aria-pressed="true">Desktop</button><button data-width="phone" aria-pressed="false">Phone</button></div></div>
+<div class="app" id="app">
+<a class="skip" href="#reading">Skip to book text</a>
+<header class="app-header">
+  <div class="header-main"><button id="library" class="quiet">← Library</button><span class="wordmark" aria-label="Pagestream">¶ <span class="brand-name">Pagestream</span></span><button id="appearance" class="quiet" aria-label="Text and appearance settings" aria-expanded="false">Aa</button></div>
+  <div class="reading-tools"><button id="contents" class="quiet" aria-expanded="false">Contents ↓</button><span id="reading-state" role="status" aria-live="polite">Owned page</span><button id="spend" class="quiet money" aria-expanded="false">Spent 6 sats</button></div>
+</header>
+<main id="main">
+<section id="library-view" hidden><div class="library-intro"><p class="eyebrow">YOUR NEXT GOOD BOOK</p><h1>The library</h1><p>Classics, a page at a time.</p></div><button class="book-row" id="open-book"><span class="eyebrow">ARTHUR CONAN DOYLE · 1892</span><span class="book-title">The Adventures of Sherlock Holmes</span><span>Continue reading →</span></button></section>
+<div class="reader-layout" id="reader-view">
+  <aside id="contents-panel" hidden aria-label="Book contents"><div class="panel-heading"><strong>Contents</strong><button class="quiet" data-close aria-label="Close contents">Close</button></div><p class="eyebrow">A SCANDAL IN BOHEMIA</p><nav id="page-list" aria-label="Pages in this story"></nav></aside>
+  <article id="reading" aria-labelledby="book-title"><p class="eyebrow">ARTHUR CONAN DOYLE</p><h1 id="book-title">The Adventures of Sherlock Holmes</h1><p class="chapter">I. A Scandal in Bohemia</p><div id="text" class="book-text"></div><p class="page-end" id="page-end"></p></article>
+</div>
+</main>
+<section class="detail-panel" id="settings-panel" hidden aria-labelledby="settings-title"><div class="panel-heading"><strong id="settings-title">Reading settings</strong><button class="quiet" data-close>Close</button></div><div class="setting-row"><span>Text size</span><div><button id="smaller" aria-label="Smaller text">A−</button><button id="larger" aria-label="Larger text">A+</button></div></div><div class="setting-row"><span>Appearance</span><div><button id="day">Day</button><button id="night">Night</button></div></div></section>
+<section class="detail-panel" id="spend-panel" hidden aria-labelledby="spend-title"><div class="panel-heading"><strong id="spend-title">Spent on this book</strong><button class="quiet" data-close>Close</button></div><dl id="ledger"></dl><p class="subtle">Wallet permission costs are separate. This preview uses sample receipts.</p></section>
+<section class="detail-panel" id="payment-panel" hidden aria-labelledby="payment-title"><div class="panel-heading"><strong id="payment-title">Open the next page</strong><button class="quiet" data-close>Stay here</button></div><p id="payment-copy"></p><p class="subtle" id="permission-copy"></p><button class="paid-action" id="confirm">Continue</button></section>
+<footer class="pager" id="pager" aria-label="Page navigation"><button id="previous" class="page-arrow" aria-label="Previous page">‹<span class="previous-word"> Previous</span></button><button id="page-position" class="position" aria-label="Choose a page"><span id="page-count"></span><span id="position-note"></span></button><button id="next" class="page-arrow next" aria-label="Next page"><span id="next-label">Next</span><span aria-hidden="true"> ›</span></button></footer>
+</div>
+<script type="module" src="/review.js"></script>
+</body></html>

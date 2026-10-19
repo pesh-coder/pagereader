@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English&amp;family=Literata:opsz,wght@7..72,400;7..72,600&amp;display=swap">
+<style>body{margin:0;background:#E9E5DE;font-family:Literata,Georgia,serif;color:#221D18}a{color:#221D18}a:hover{background:#EAE2D3}.dv-turn{padding:40px 44px 36px;border-bottom:1px solid rgba(0,0,0,.1);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(0,0,0,.6)}.dv-card{max-width:100%;background:#FFFFFF;border:1px solid rgba(0,0,0,.12);overflow:hidden}.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}.dv-next{margin:22px 0 0;font:12px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.55)}</style>
+</helmet>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Pagestream · rebuilt to the full brief (sections 1–8), paper set to white</span></div>
+<div style="max-width:900px;font:13px/1.6 system-ui,sans-serif;color:rgba(0,0,0,.72)">
+<p style="margin:0 0 8px">What changed from turn 1: the 8 Gutenberg titles with ≈ page counts and whole-book cost; cloth spine swatch per row; desktop catalogue with a selected-book panel; counter reads <b>Spent 24 sats · 4 pages × 5 · fees 4</b> with a 150ms rubric underline on each confirmed page; Next reads <b>→ / · 5 sats / · owned</b>; A−/A+ (text scrolls, pages don't split); 120ms crossfade; permission panel replaces the footer, uses the 5,000-sat draft and is marked provisional; edge copy from §5.6 including "page failed to load"; Terms/Privacy from §5.7; error colour; night tokens from §3; pilcrow / page-corner devices from §4.</p>
+<p style="margin:0">Assumptions: fee shown as 1 sat per page (placeholder until the spike); paper is #FFFFFF per your request, not the brief's #F4EEE3. Live prototype: <a href="Pagestream.dc.html">Pagestream.dc.html</a>. Its Tweaks switch wallet scenario and light/night.</p>
+</div>
+</section>
+
+<section class="dv-turn" id="tokens">
+<div class="dv-thd"><a class="dv-tid" href="#tokens">T</a><span class="dv-tname">Token sheet</span></div>
+<div class="dv-opts">
+<div class="dv-opt"><div class="dv-olabel">Colour · light</div>
+<div class="dv-card" style="width:420px;padding:20px;background:#FFFFFF">
+<div style="display:grid;grid-template-columns:56px 1fr;gap:0 14px">
+<sc-for list="{{ light }}" as="c" hint-placeholder-count="7"><div style="height:44px;background:{{ c.hex }};border:1px solid #221D18;margin:6px 0"></div><div style="padding:8px 0;border-bottom:1px solid #CFC5B4;font-size:15px"><strong style="font-weight:600">{{ c.name }}</strong> <span style="color:#6E655B">{{ c.hex }}</span><div style="font-size:13px;color:#6E655B">{{ c.use }}</div></div></sc-for>
+</div></div></div>
+<div class="dv-opt"><div class="dv-olabel">Colour · night (lamplight brown, no glow)</div>
+<div class="dv-card" style="width:420px;padding:20px;background:#1F1A15;color:#E9E0D0">
+<div style="display:grid;grid-template-columns:56px 1fr;gap:0 14px">
+<sc-for list="{{ night }}" as="c" hint-placeholder-count="7"><div style="height:44px;background:{{ c.hex }};border:1px solid #E9E0D0;margin:6px 0"></div><div style="padding:8px 0;border-bottom:1px solid #3B342B;font-size:15px"><strong style="font-weight:600">{{ c.name }}</strong> <span style="color:#A89C8B">{{ c.hex }}</span><div style="font-size:13px;color:#A89C8B">{{ c.use }}</div></div></sc-for>
+</div></div></div>
+<div class="dv-opt"><div class="dv-olabel">Type · Fell 28px and up only · no monospace</div>
+<div class="dv-card" style="width:520px;padding:20px">
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-family:'IM Fell English',serif;font-size:48px;line-height:1.05">Display 48</div><div style="font-size:13px;color:#6E655B">IM Fell English · desktop book title</div></div>
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-family:'IM Fell English',serif;font-size:32px;line-height:1.1">Page title 32</div><div style="font-size:13px;color:#6E655B">IM Fell English · reader h1</div></div>
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-family:'IM Fell English',serif;font-size:28px;line-height:1.12">¶ Pagestream · row title 28</div><div style="font-size:13px;color:#6E655B">IM Fell English · wordmark and catalogue rows</div></div>
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-size:19px;line-height:1.6">Reading 19/1.6, measure 60–68 characters, left-aligned, hyphens auto. A− / A+ steps 17–24.</div><div style="font-size:13px;color:#6E655B">Literata 400</div></div>
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-size:17px;line-height:1.5">Interface 17 · buttons, panels, links</div><div style="font-size:13px;color:#6E655B">Literata 400 / 600 panel heads</div></div>
+<div style="padding:10px 0;border-bottom:1px solid #CFC5B4"><div style="font-size:16px;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.05em">Label 15–16 · ≈ 330 pages · whole book ≈ 1,640 sats</div><div style="font-size:13px;color:#6E655B">Literata all-small-caps, tabular lining</div></div>
+<div style="padding:10px 0"><div style="font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em"><span style="font-size:16px">Spent</span> <span style="font-size:28px;color:#B4441C;border-bottom:1px solid #B4441C">45 sats</span></div><div style="font-size:13px;color:#6E655B">Counter 28 · rubric · 150ms underline sweep on each confirmed page</div></div>
+</div></div>
+<div class="dv-opt"><div class="dv-olabel">Spacing · rules · states</div>
+<div class="dv-card" style="width:420px;padding:20px">
+<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">
+<sc-for list="{{ space }}" as="s" hint-placeholder-count="8"><div style="display:flex;align-items:center;gap:12px;font-size:13px"><span style="width:28px;color:#6E655B">{{ s.n }}</span><span style="height:10px;width:{{ s.px }};background:#221D18"></span></div></sc-for>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;font-size:14px">
+<div><div style="border-top:1px solid #221D18;margin-bottom:4px"></div>Ink rule 1px · structure, ledger strip, section tops</div>
+<div><div style="border-top:1px solid #CFC5B4;margin-bottom:4px"></div>Quiet rule 1px #CFC5B4 · list separators</div>
+<div>Radius 0. No shadows, blur or glow. Targets ≥ 44px.</div>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<span style="padding:12px 16px;border:1px solid #221D18">Rest</span>
+<span style="padding:12px 16px;border:1px solid #221D18;background:#EAE2D3;box-shadow:inset 0 -3px 0 #221D18">Hover</span>
+<span style="padding:12px 16px;border:1px solid #221D18;outline:2px solid #221D18;outline-offset:2px">Focus</span>
+</div>
+<div style="padding:12px 10px;background:#EAE2D3;box-shadow:inset 0 1px 0 #221D18,inset 0 -1px 0 #221D18">Selected row: paper-shade fill + ink rules</div>
+<div style="font-size:13px;color:#6E655B">Rubric is for money, the paid action, the preview stamp and drop caps. Nothing decorative.</div>
+</div></div></div>
+</div>
+</section>
+
+<section class="dv-turn" id="t-logo">
+<div class="dv-thd"><a class="dv-tid" href="#t-logo">L</a><span class="dv-tname">Printer's device candidates · 128 / 32 / 16 · on paper and night · one colour each</span></div>
+<div class="dv-opts">
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Pilcrow whose stem ends in a coin dot</div>
+<div class="dv-card" style="display:flex;flex-direction:column">
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#FFFFFF">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="position:relative;width:{{ z.s }};height:{{ z.s }}"><div style="position:absolute;left:18%;top:6%;width:44%;height:44%;border-radius:50%;background:#B4441C"></div><div style="position:absolute;left:48%;top:6%;width:12%;height:72%;background:#B4441C"></div><div style="position:absolute;left:70%;top:6%;width:12%;height:72%;background:#B4441C"></div><div style="position:absolute;left:44%;top:6%;width:38%;height:10%;background:#B4441C"></div><div style="position:absolute;left:64%;top:80%;width:24%;height:18%;border-radius:50%;background:#B4441C"></div></div></sc-for>
+<div style="display:flex;align-items:center;gap:10px;margin-left:12px"><div style="position:relative;width:32px;height:32px"><div style="position:absolute;left:18%;top:6%;width:44%;height:44%;border-radius:50%;background:#B4441C"></div><div style="position:absolute;left:48%;top:6%;width:12%;height:72%;background:#B4441C"></div><div style="position:absolute;left:70%;top:6%;width:12%;height:72%;background:#B4441C"></div><div style="position:absolute;left:44%;top:6%;width:38%;height:10%;background:#B4441C"></div><div style="position:absolute;left:64%;top:80%;width:24%;height:18%;border-radius:50%;background:#B4441C"></div></div><span style="font-family:'IM Fell English',serif;font-size:30px">Pagestream</span></div>
+</div>
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#1F1A15">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="position:relative;width:{{ z.s }};height:{{ z.s }}"><div style="position:absolute;left:18%;top:6%;width:44%;height:44%;border-radius:50%;background:#E0784A"></div><div style="position:absolute;left:48%;top:6%;width:12%;height:72%;background:#E0784A"></div><div style="position:absolute;left:70%;top:6%;width:12%;height:72%;background:#E0784A"></div><div style="position:absolute;left:44%;top:6%;width:38%;height:10%;background:#E0784A"></div><div style="position:absolute;left:64%;top:80%;width:24%;height:18%;border-radius:50%;background:#E0784A"></div></div></sc-for>
+</div>
+</div></div>
+
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Page corner with one rubric mark</div>
+<div class="dv-card" style="display:flex;flex-direction:column">
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#FFFFFF">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="position:relative;width:{{ z.s }};height:{{ z.s }}"><div style="position:absolute;left:12%;top:4%;right:12%;bottom:4%;border:{{ z.bw }} solid #B4441C;clip-path:polygon(0 0,70% 0,100% 26%,100% 100%,0 100%)"></div><div style="position:absolute;left:58%;top:4%;width:30%;height:26%;background:#B4441C;clip-path:polygon(0 0,0 100%,100% 100%)"></div></div></sc-for>
+<div style="display:flex;align-items:center;gap:10px;margin-left:12px"><div style="position:relative;width:32px;height:32px"><div style="position:absolute;left:12%;top:4%;right:12%;bottom:4%;border:2px solid #B4441C;clip-path:polygon(0 0,70% 0,100% 26%,100% 100%,0 100%)"></div><div style="position:absolute;left:58%;top:4%;width:30%;height:26%;background:#B4441C;clip-path:polygon(0 0,0 100%,100% 100%)"></div></div><span style="font-family:'IM Fell English',serif;font-size:30px">Pagestream</span></div>
+</div>
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#1F1A15">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="position:relative;width:{{ z.s }};height:{{ z.s }}"><div style="position:absolute;left:12%;top:4%;right:12%;bottom:4%;border:{{ z.bw }} solid #E0784A;clip-path:polygon(0 0,70% 0,100% 26%,100% 100%,0 100%)"></div><div style="position:absolute;left:58%;top:4%;width:30%;height:26%;background:#E0784A;clip-path:polygon(0 0,0 100%,100% 100%)"></div></div></sc-for>
+</div>
+</div></div>
+
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Typeset pilcrow · IM Fell ¶ in ink (used in the prototype header)</div>
+<div class="dv-card" style="display:flex;flex-direction:column">
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#FFFFFF">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="width:{{ z.s }};height:{{ z.s }};display:flex;align-items:center;justify-content:center;font-family:'IM Fell English',serif;font-size:{{ z.fs }};line-height:1;color:#221D18">¶</div></sc-for>
+<div style="display:flex;align-items:center;gap:10px;margin-left:12px"><span style="font-family:'IM Fell English',serif;font-size:32px;line-height:1">¶</span><span style="font-family:'IM Fell English',serif;font-size:30px">Pagestream</span></div>
+</div>
+<div style="padding:24px;display:flex;align-items:flex-end;gap:28px;background:#1F1A15">
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><div style="width:{{ z.s }};height:{{ z.s }};display:flex;align-items:center;justify-content:center;font-family:'IM Fell English',serif;font-size:{{ z.fs }};line-height:1;color:#E9E0D0">¶</div></sc-for>
+</div>
+</div></div>
+</div>
+<p class="dv-next">Try next: "<a class="dv-oid" href="#2a">2a</a> in ink instead of rubric" · "put <a class="dv-oid" href="#2b">2b</a> in the app header" · "thicker <a class="dv-oid" href="#2c">2c</a> at 16px"</p>
+</section>
+
+<section class="dv-turn" id="t-counter">
+<div class="dv-thd"><a class="dv-tid" href="#t-counter">C</a><span class="dv-tname">Counter · one number, its breakdown, one status</span></div>
+<div class="dv-opts">
+<sc-for list="{{ counters }}" as="k" hint-placeholder-count="6">
+<div class="dv-opt"><div class="dv-olabel">{{ k.state }}</div>
+<div class="dv-card" style="width:390px">
+<div style="background:#EAE2D3;border-bottom:1px solid #221D18;padding:10px 18px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;min-height:72px">
+<sc-if value="{{ k.free }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.06em;font-size:19px;color:#B4441C;padding:6px 0">Free preview · page 1 of 2</p></sc-if>
+<sc-if value="{{ k.paid }}" hint-placeholder-val="{{ true }}">
+<div><p style="margin:0;display:flex;align-items:baseline;gap:8px;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em"><span style="font-size:16px">Spent</span><span style="font-size:28px;line-height:1.1;color:#B4441C;border-bottom:1px solid {{ k.under }};padding-bottom:2px">{{ k.n }} sats</span></p>
+<p style="margin:2px 0 0;font-variant-caps:all-small-caps;font-variant-numeric:tabular-nums lining-nums;letter-spacing:.04em;font-size:15px;color:#6E655B">{{ k.bd }}</p></div>
+<p style="margin:0;display:flex;align-items:center;gap:6px;padding-bottom:2px"><span style="font-variant-caps:all-small-caps;letter-spacing:.05em;font-size:15px;padding:1px 8px 3px;border:1px solid {{ k.border }}">{{ k.badge }}</span></p>
+</sc-if>
+</div>
+<div style="padding:10px 18px 12px;font-size:14px;color:#6E655B;line-height:1.45">{{ k.note }}</div>
+</div></div>
+</sc-for>
+</div>
+</section>
+
+<section class="dv-turn" id="t-mobile">
+<div class="dv-thd"><a class="dv-tid" href="#t-mobile">M</a><span class="dv-tname">Screens 1–7 at 390px · live, scroll inside each frame</span></div>
+<div class="dv-opts">
+<sc-for list="{{ mobile }}" as="m" hint-placeholder-count="13">
+<div class="dv-opt"><div class="dv-olabel">{{ m.label }}</div>
+<div class="dv-card" style="width:390px;height:844px"><iframe src="{{ m.src }}" title="{{ m.label }}" width="390" height="844" loading="lazy" style="border:0;display:block"></iframe></div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section class="dv-turn" id="t-desktop">
+<div class="dv-thd"><a class="dv-tid" href="#t-desktop">D</a><span class="dv-tname">Screens 1, 2 and 4 at 1280px</span></div>
+<div class="dv-opts">
+<sc-for list="{{ desktop }}" as="m" hint-placeholder-count="3">
+<div class="dv-opt"><div class="dv-olabel">{{ m.label }}</div>
+<div class="dv-card" style="width:1280px;height:860px"><iframe src="{{ m.src }}" title="{{ m.label }}" width="1280" height="860" loading="lazy" style="border:0;display:block"></iframe></div>
+</div>
+</sc-for>
+</div>
+<p class="dv-next">Try next: "night versions of all seven screens" · "export static Tailwind v4 HTML" · "page index as a bottom sheet in the reader"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const F = 'Pagestream.dc.html#';
+    return {
+      light: [
+        { name: 'paper', hex: '#FFFFFF', use: 'Page background (white, per your change)' },
+        { name: 'paper-shade', hex: '#EAE2D3', use: 'Ledger strip, panels, selected row' },
+        { name: 'ink', hex: '#221D18', use: 'Body text, headings, 1px rules · never #000' },
+        { name: 'pencil', hex: '#6E655B', use: 'Author, metadata, captions · AA' },
+        { name: 'rubric', hex: '#B4441C', use: 'Money, the paid action, preview stamp, drop caps' },
+        { name: 'rule', hex: '#CFC5B4', use: 'Quiet dividers' },
+        { name: 'error', hex: '#8E1F14', use: 'Declined / not enough funds · always with a text label' }
+      ],
+      night: [
+        { name: 'paper', hex: '#1F1A15', use: 'Page background' },
+        { name: 'paper-shade', hex: '#2A241D', use: 'Ledger strip, panels' },
+        { name: 'ink', hex: '#E9E0D0', use: 'Text, rules' },
+        { name: 'pencil', hex: '#A89C8B', use: 'Secondary text' },
+        { name: 'rubric', hex: '#E0784A', use: 'Money, paid action, drop caps' },
+        { name: 'rule', hex: '#3B342B', use: 'Quiet dividers' },
+        { name: 'error', hex: '#E58A7C', use: 'Declined / funds' }
+      ],
+      space: [4, 8, 12, 16, 24, 32, 48, 64].map(n => ({ n, px: n * 3 + 'px' })),
+      sizes: [{ s: '128px', bw: '6px', fs: '128px' }, { s: '32px', bw: '2px', fs: '34px' }, { s: '16px', bw: '1.5px', fs: '18px' }],
+      counters: [
+        { state: 'Free', free: true, paid: false, note: 'Pages 1–2. No number yet, no wallet asked for.' },
+        { state: 'First paid', free: false, paid: true, n: '6', bd: '1 page × 5 · fees 1', badge: 'First paid page', border: 'transparent', under: 'transparent', note: 'Page 3, right after the wallet allows Pagestream once.' },
+        { state: 'Confirming · provisional', free: false, paid: true, n: '18', bd: '3 pages × 5 · fees 3', badge: 'Confirming…', border: 'transparent', under: 'transparent', note: 'The payment is waiting on the server. The page is already showing.' },
+        { state: 'Confirmed tick', free: false, paid: true, n: '24', bd: '4 pages × 5 · fees 4', badge: 'Page 6 confirmed', border: 'transparent', under: '#B4441C', note: 'The number ticks up once; a 1px rubric underline sweeps in over 150ms.' },
+        { state: 'Unresolved · provisional', free: false, paid: true, n: '24', bd: '4 pages × 5 · fees 4', badge: '1 payment unresolved', border: '#221D18', under: 'transparent', note: 'A row under the strip: "5 sats left your wallet for page 6, but the page didn\u2019t arrive. You won\u2019t pay for it twice." + Fetch page 6 again.' },
+        { state: 'Owned page', free: false, paid: true, n: '24', bd: '4 pages × 5 · fees 4', badge: 'Page 4 · owned', border: 'transparent', under: 'transparent', note: 'Going back, or reopening on another device. Next reads "Next page · owned".' }
+      ],
+      mobile: [
+        { label: '1 · Catalogue', src: F + 'v=catalogue&last=6&paid=4' },
+        { label: '2 · Reader, free page 1', src: F + 'v=reader&p=1' },
+        { label: '3 · Permission moment (provisional)', src: F + 'v=reader&p=2&panel=permission' },
+        { label: '4 · Reader, paid page', src: F + 'v=reader&p=5&paid=3&st=confirmed' },
+        { label: '4 · Night', src: F + 'v=reader&p=5&paid=3&st=confirmed&theme=night' },
+        { label: '5 · Continue on another device', src: F + 'v=continue&paid=4&last=6' },
+        { label: '6a · No wallet at page 3', src: F + 'v=reader&p=2&panel=noWallet&s=no-wallet' },
+        { label: '6b · Wallet declined', src: F + 'v=reader&p=2&panel=declined' },
+        { label: '6c · Not enough funds', src: F + 'v=reader&p=2&panel=lowFunds&s=low-funds' },
+        { label: '6d · Page failed to load after payment', src: F + 'v=reader&p=4&paid=2&st=refetch' },
+        { label: '6e · Payment unresolved', src: F + 'v=reader&p=4&paid=2&st=unresolved' },
+        { label: '7a · Terms', src: F + 'v=terms' },
+        { label: '7b · Privacy', src: F + 'v=privacy' }
+      ],
+      desktop: [
+        { label: '1 · Catalogue with selected book · 1280', src: F + 'v=catalogue&last=6&paid=4' },
+        { label: '2 · Reader, free page 1 · 1280', src: F + 'v=reader&p=1' },
+        { label: '4 · Reader, paid page · 1280', src: F + 'v=reader&p=5&paid=3&st=confirmed' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

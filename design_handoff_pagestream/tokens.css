@@ -1,0 +1,57 @@
+/* Pagestream design tokens — Tailwind v4 compatible.
+   Import once at the app root: @import "tailwindcss"; @import "./tokens.css";
+   Night theme: set data-theme="night" on <html>. */
+
+@theme {
+  /* Colour (light, default) */
+  --color-paper: #FFFFFF;        /* page background (client override of brief's #F4EEE3) */
+  --color-shade: #EAE2D3;        /* paper-shade: ledger strip, panels, selected row */
+  --color-ink: #221D18;          /* body text, headings, 1px rules. Never #000 */
+  --color-pencil: #6E655B;       /* secondary text: author, metadata, captions */
+  --color-rubric: #B4441C;       /* ONLY money, the paid action, FREE PREVIEW stamp, drop caps */
+  --color-rule: #CFC5B4;         /* quiet 1px dividers */
+  --color-error: #8E1F14;        /* declined / not enough funds — always paired with a text label */
+
+  /* Type */
+  --font-display: "IM Fell English", Georgia, serif;   /* book titles + wordmark only, >= 28px */
+  --font-body: "Literata", Georgia, serif;             /* reading + all UI */
+
+  --text-label: 15px;      --text-label--line-height: 1.4;
+  --text-ui: 17px;         --text-ui--line-height: 1.5;
+  --text-read: 19px;       --text-read--line-height: 1.6;   /* user range 17–24 via A−/A+ */
+  --text-row-title: 28px;  --text-row-title--line-height: 1.12;
+  --text-counter: 28px;    --text-counter--line-height: 1.1;
+  --text-page-title: 32px; --text-page-title--line-height: 1.1;
+  --text-h1: 34px;         --text-h1--line-height: 1.1;
+  --text-display: 36px;    --text-display--line-height: 1.08;
+
+  /* Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 (Tailwind spacing base 4px) */
+  --spacing: 4px;
+
+  /* Shape */
+  --radius-none: 0;
+  --measure: 35em;          /* reading column ≈ 60–68 chars */
+  --container: 1200px;
+  --breakpoint-wide: 960px; /* desktop layout: catalogue side panel, reader page index */
+}
+
+:root {
+  --paper: var(--color-paper);
+  --shade: var(--color-shade);
+  --ink: var(--color-ink);
+  --pencil: var(--color-pencil);
+  --rubric: var(--color-rubric);
+  --rule: var(--color-rule);
+  --error: var(--color-error);
+}
+
+:root[data-theme="night"] {
+  /* Warm lamplight brown — not black, no glow */
+  --paper: #1F1A15;
+  --shade: #2A241D;
+  --ink: #E9E0D0;
+  --pencil: #A89C8B;
+  --rubric: #E0784A;
+  --rule: #3B342B;
+  --error: #E58A7C;
+}
