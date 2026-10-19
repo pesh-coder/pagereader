@@ -1,0 +1,3 @@
+export function assertReadOnlyPageSixResume(record: { page?: number; requestId?: string; state?: string; spends?: unknown[]; calls?: { method: string }[]; http?: { path: string }[] }) {
+  if (record.page !== 6 || !/^[a-f0-9-]{36}$/.test(record.requestId ?? '') || record.state !== 'preflight' || !Array.isArray(record.spends) || record.spends.length || !Array.isArray(record.calls) || !Array.isArray(record.http) || record.calls.some(call => /createAction|signAction|payment workflow|abortAction|internalizeAction/.test(call.method)) || record.http.some(call => /\/pages\//.test(call.path))) throw new Error('Only a reconciled read-only preflight can resume; never replace a payment attempt')
+}
