@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+# Wallet/database material and private experiment exports must stay local.
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.pem
+*.key
+*.p12
+*.pfx
+spike/data/LIVE_PAYMENT_PROBE.json
+spike/evidence/runs/
+# Native test captures may contain wallet balances and financial details.
+spike/evidence/screenshots/

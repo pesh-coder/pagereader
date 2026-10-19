@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "name": "app",
+  "network": "main",
+  "stack": {
+    "frontend": {
+      "framework": "react",
+      "variant": "react-ts"
+    },
+    "backend": {
+      "framework": "express"
+    }
+  },
+  "targets": {
+    "client": "client",
+    "server": "server"
+  },
+  "bsvDir": "src/bsv",
+  "capabilities": [
+    "wallet-connect"
+  ],
+  "starter": {
+    "id": "full-stack",
+    "kind": "generated"
+  }
+}
