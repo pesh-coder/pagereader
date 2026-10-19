@@ -1,5 +1,7 @@
 # Vercel frontend + existing Railway Hobby backend
 
+Live checkpoint, 2026-10-19: frontend `https://pagereader.vercel.app`, backend `https://pagestream-production.up.railway.app`. Both `/health` endpoints return maintenance/mainnet/paused/not payment-ready; `/api/library` returns the expected maintenance 503. The volume mount is verified, but SSH authentication prevented checking its contents. Import/identity verification and normal activation are still outstanding. [Diagnosis](../spike/evidence/hosted-maintenance-2026-10-19.md).
+
 Current target, 2026-10-19: the owner has an existing Railway Hobby plan and is testing a personal POC with their own wallet. Use that backend with a persistent volume and keep the current SQLite implementation. No Neon migration or new Render subscription is needed. Included Railway credits are shared with other usage and do not guarantee zero additional charges. No provider account setting, resource or payment is changed by these repository files.
 
 ## Railway build failure and fix
@@ -44,7 +46,7 @@ PAGESTREAM_REQUIRE_EXISTING_STATE=1
 PAGESTREAM_MAINTENANCE=1
 SPIKE_MANIFEST=1
 WALLET_STORAGE_URL=https://storage.babbage.systems
-PUBLIC_ORIGIN=https://YOUR-STABLE-FRONTEND.vercel.app
+PUBLIC_ORIGIN=https://pagereader.vercel.app
 ```
 
 Add `SERVER_PRIVATE_KEY` only as a Railway secret with the existing ignored receiving-key value, never a reader wallet key or a new replacement. It may remain unset during maintenance. Keep development dependencies because normal startup uses `tsx`. `RAILPACK_NO_SPA=1` keeps this service a Node backend, not an auto-served frontend. Let Railway supply `PORT` and `RAILWAY_PUBLIC_DOMAIN`.
@@ -52,7 +54,7 @@ Add `SERVER_PRIVATE_KEY` only as a Railway secret with the existing ignored rece
 Before the Vercel URL exists, **omit** `PUBLIC_ORIGIN` for first-host maintenance; the launcher can use `https://${RAILWAY_PUBLIC_DOMAIN}` for health-only provisioning. After Railway assigns a public domain, add this on Vercel **Production**, root directory `.`, Application Preset **Other**:
 
 ```dotenv
-PAGESTREAM_BACKEND_ORIGIN=https://YOUR-ACTUAL-BACKEND.up.railway.app
+PAGESTREAM_BACKEND_ORIGIN=https://pagestream-production.up.railway.app
 ```
 
 The root `vercel.mjs` reads this during configuration evaluation, before frontend build. Missing values or hostnames without `https://` reproduce the reported `PAGESTREAM_BACKEND_ORIGIN must be a public HTTPS origin` error. Enter the actual URL without quotes or `/api`/`/reader/`, save, and create a new deployment. Do not set any server private key or frontend `VITE_API_URL` on Vercel. The existing install/build/static staging configuration remains in place.
