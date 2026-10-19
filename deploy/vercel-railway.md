@@ -1,5 +1,7 @@
 # Vercel frontend + existing Railway Hobby backend
 
+Activation update: owner imported the paused original snapshot; all remote hashes match. Both hosts now serve library 200 and mainnet health with purchasesPaused true. Hosted authenticated recovery and exact receiving-identity confirmation remain open. [Steps and evidence](../spike/evidence/hosted-activation-2026-10-19.md). The maintenance-only checkpoint below is historical.
+
 Live checkpoint, 2026-10-19: frontend `https://pagereader.vercel.app`, backend `https://pagestream-production.up.railway.app`. Both `/health` endpoints return maintenance/mainnet/paused/not payment-ready; `/api/library` returns the expected maintenance 503. The volume mount is verified, but SSH authentication prevented checking its contents. Import/identity verification and normal activation are still outstanding. [Diagnosis](../spike/evidence/hosted-maintenance-2026-10-19.md).
 
 Current target, 2026-10-19: the owner has an existing Railway Hobby plan and is testing a personal POC with their own wallet. Use that backend with a persistent volume and keep the current SQLite implementation. No Neon migration or new Render subscription is needed. Included Railway credits are shared with other usage and do not guarantee zero additional charges. No provider account setting, resource or payment is changed by these repository files.
