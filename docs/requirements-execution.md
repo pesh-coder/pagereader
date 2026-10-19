@@ -1,5 +1,7 @@
 # Remaining requirements - execution queue
 
+Latest 2026-10-19: hosted owned-page recovery/74-sat restoration passed. Page-7 test stopped on denied new hosted-origin allowance, with no new outgoing transaction observed. Preserve original challenged intent/journal; confirm expired permit-file cleanup before deployment. Next is separately scoped native permission/setup-cost evidence, then reconciliation of the same page request. All C1–C11 statuses unchanged. [Evidence](../spike/evidence/hosted-page7-denial-2026-10-19.md).
+
 2026-10-19 activation update: Vercel/Railway public reading works; original paused snapshot hashes match after import. Next: verify hosted same-identity owned-page/fee/bookmark recovery and exact receiving identity before proposing one controlled purchase. Keep purchases paused. Earlier no-deployment notes are historical; C1–C11 statuses remain unchanged. [Hosting decision and verification](../spike/evidence/hosted-activation-2026-10-19.md).
 
 2026-10-19 live requirement 8 checkpoint: Vercel/Railway deployment health and maintenance forwarding work at the supplied public URLs. The library is intentionally blocked by maintenance. The volume mount is correct; original ledger import remains unverified because Railway CLI file access needs SSH authentication. Next: establish authorized file access, verify/import the paused state and receiving identity, then activate normal reading/recovery while keeping purchases paused. [Evidence](../spike/evidence/hosted-maintenance-2026-10-19.md).

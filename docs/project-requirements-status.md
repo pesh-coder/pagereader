@@ -1,5 +1,7 @@
 # Pagestream requirements audit
 
+Latest 2026-10-19 hosted test: owned Holmes recovery and 74-sat fee restoration passed. One page-7 request encountered a new 5,000/month grant; owner denied it because grant costs were outside scope. No new outgoing transaction observed; original challenged intent/journals retained. Expired remote permit needs cleanup before deployment. No hosted paid delivery or status upgrade. [Evidence](../spike/evidence/hosted-page7-denial-2026-10-19.md).
+
 2026-10-19 activation update: original paused ledger imported by owner; remote hashes match the verified backup. Both hosts return library 200 and mainnet health with purchases paused. Hosted same-identity owned-page/fee/bookmark recovery and exact receiving-identity equality remain open. Earlier maintenance-only/no-deployment notes are historical. C1–C11 statuses below remain unchanged. [Verification and next gates](../spike/evidence/hosted-activation-2026-10-19.md).
 
 2026-10-19 live hosting checkpoint: Vercel static shell and proxied Railway maintenance health now respond; browser library failure is confirmed as maintenance 503. Correct volume mount verified, contents/import/identity unverified because CLI SSH authentication failed. This is a narrow hosting/routing observation, not reading/payment/phone acceptance. [Evidence](../spike/evidence/hosted-maintenance-2026-10-19.md). C1–C11 and the purchase pause remain unchanged.
