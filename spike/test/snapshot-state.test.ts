@@ -9,6 +9,7 @@ import { Store } from '../src/store.js'
 import { snapshotPausedState } from '../scripts/snapshot-state.js'
 import { createProbe } from '../src/probe.js'
 import { loadEdition } from '../src/content.js'
+import { purchaseGate } from '../src/purchase-gate.js'
 
 test('paused SQLite snapshot preserves WAL intents/proofs, never overwrites, and excludes keys/permits', async t => {
   const root = mkdtempSync(join(tmpdir(), 'pagestream-snapshot-'))
@@ -51,4 +52,26 @@ test('configured state directory controls the pause independently of immutable c
   assert.equal((await (await fetch(url)).json()).purchasesPaused, true)
   unlinkSync(join(directory, 'PAID_REQUESTS_PAUSED'))
   assert.equal((await (await fetch(url)).json()).purchasesPaused, false)
+})
+
+test('manual admission switch preserves imported pause state and exposes matching health/library status', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'pagestream-manual-admission-'))
+  const marker = join(directory, 'PAID_REQUESTS_PAUSED')
+  writeFileSync(marker, 'original pause')
+  t.after(() => { if (!resolve(directory).startsWith(resolve(tmpdir()) + sep)) throw new Error('Unsafe cleanup'); rmSync(directory, { recursive: true, force: true }) })
+  for (const [setting, expected] of [[undefined, true], ['0', true], ['1', false]] as const) {
+    const store = new Store(':memory:')
+    store.reserve('reader', 'edition', 7, 'original-request')
+    const server = http.createServer(createProbe({ store, edition: loadEdition(), stateDirectory: directory, purchasesPaused: purchaseGate(directory, setting) }))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+      for (const path of ['/health', '/api/library']) assert.equal((await (await fetch(base + path)).json()).purchasesPaused, expected)
+      assert.equal(store.intent('reader', 'edition', 7)?.request_id, 'original-request')
+      assert.equal(existsSync(marker), true)
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); store.close() }
+  }
+  assert.throws(() => purchaseGate(directory, 'true'), /must be 0 or 1/)
+  unlinkSync(marker)
+  assert.equal(purchaseGate(directory, '0')(), true)
 })

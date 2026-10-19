@@ -1,5 +1,13 @@
 # Vercel frontend + existing Railway Hobby backend
 
+## Owner-operated manual purchases
+
+The owner subsequently requested unpaused browser testing on 2026-10-19. Set Railway `PAGESTREAM_PURCHASES_ENABLED=1` to admit new purchases; set `0` and redeploy to pause them again. Keep `PAGESTREAM_MAINTENANCE=0` for reading and retain the original `PAID_REQUESTS_PAUSED` marker on the volume. The explicit admission switch overrides that marker without deleting it, and defaults to the existing marker policy when unset. Invalid switch values fail startup. Remove the expired `LIVE_PAYMENT_PROBE.json` before deploying; the owner confirmed deletion. A leftover permit remains a startup error.
+
+After deployment, verify `/health` and `/api/library` show `purchasesPaused:false`, then refresh the reader so its cached admission state updates. Enabled admission applies to all readers with the public link; it is not restricted to the owner's wallet. No background buying is introduced: each new page still requires an explicit page request, with the existing five-sat price, one-sat maximum checked miner fee, original-proof persistence and ownership/intent guards. Native permission/grant costs are separate and remain subject to the person reviewing the wallet prompt.
+
+The denied Holmes page-7 intent and browser journal remain preserved; do not retry/reset them to test fresh buying. Start manual new-page testing with a different unowned book/page, for example Pride and Prejudice page 3 after its two free pages. Pause again after testing. This setting does not repair native allowance accounting or certify C1–C11.
+
 Activation update: owner imported the paused original snapshot; all remote hashes match. Both hosts now serve library 200 and mainnet health with purchasesPaused true. Hosted authenticated recovery and exact receiving-identity confirmation remain open. [Steps and evidence](../spike/evidence/hosted-activation-2026-10-19.md). The maintenance-only checkpoint below is historical.
 
 Live checkpoint, 2026-10-19: frontend `https://pagereader.vercel.app`, backend `https://pagestream-production.up.railway.app`. Both `/health` endpoints return maintenance/mainnet/paused/not payment-ready; `/api/library` returns the expected maintenance 503. The volume mount is verified, but SSH authentication prevented checking its contents. Import/identity verification and normal activation are still outstanding. [Diagnosis](../spike/evidence/hosted-maintenance-2026-10-19.md).

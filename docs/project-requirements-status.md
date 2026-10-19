@@ -1,5 +1,7 @@
 # Pagestream requirements audit
 
+Owner direction after the denial checkpoint: enable purchases for manual browser testing, retaining existing intents/proofs and the pause marker. Expired permit deletion was confirmed by owner. Explicit Railway admission/rollback setting is documented in the [deployment guide](../deploy/vercel-railway.md#owner-operated-manual-purchases). General admission and user-run approvals do not supply a new acceptance pass; C1–C11 remain unchanged.
+
 Latest 2026-10-19 hosted test: owned Holmes recovery and 74-sat fee restoration passed. One page-7 request encountered a new 5,000/month grant; owner denied it because grant costs were outside scope. No new outgoing transaction observed; original challenged intent/journals retained. Expired remote permit needs cleanup before deployment. No hosted paid delivery or status upgrade. [Evidence](../spike/evidence/hosted-page7-denial-2026-10-19.md).
 
 2026-10-19 activation update: original paused ledger imported by owner; remote hashes match the verified backup. Both hosts return library 200 and mainnet health with purchases paused. Hosted same-identity owned-page/fee/bookmark recovery and exact receiving-identity equality remain open. Earlier maintenance-only/no-deployment notes are historical. C1–C11 statuses below remain unchanged. [Verification and next gates](../spike/evidence/hosted-activation-2026-10-19.md).

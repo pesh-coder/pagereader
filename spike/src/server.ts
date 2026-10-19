@@ -8,12 +8,14 @@ import { createProbe } from './probe.js'
 import { loadEdition, loadCatalogue } from './content.js'
 import { Store } from './store.js'
 import { createLocalWalletManifest } from './local-wallet-manifest.js'
+import { purchaseGate } from './purchase-gate.js'
 
 if ((process.env.BSV_NETWORK ?? 'main') !== 'main') throw new Error('This spike is mainnet only')
 const port = Number(process.env.PORT ?? 3108)
 const origin = new URL(process.env.PUBLIC_ORIGIN ?? `http://localhost:${port}`)
 if (origin.protocol !== 'https:' && origin.hostname !== 'localhost') throw new Error('Use HTTPS outside localhost')
 const stateDirectory = resolve(process.env.PAGESTREAM_STATE_DIR ?? 'data')
+const purchasesPaused = purchaseGate(stateDirectory, process.env.PAGESTREAM_PURCHASES_ENABLED)
 if (process.env.PAGESTREAM_REQUIRE_EXISTING_STATE === '1' && (!existsSync(join(stateDirectory, 'spike.sqlite')) || !existsSync(join(stateDirectory, 'PAID_REQUESTS_PAUSED')))) throw new Error('Import the existing paused database snapshot before starting this deployment; refusing a new empty ledger')
 await mkdir(stateDirectory, { recursive: true })
 let wallet: WalletInterface | undefined
@@ -25,7 +27,7 @@ if (process.env.SERVER_PRIVATE_KEY) {
   serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey
 }
 const store = new Store(join(stateDirectory, 'spike.sqlite'))
-const app = createProbe({ store, edition: loadEdition(), catalogue: loadCatalogue(), wallet, serverIdentity, stateDirectory, manifestEnabled: process.env.SPIKE_MANIFEST !== '0' })
+const app = createProbe({ store, edition: loadEdition(), catalogue: loadCatalogue(), wallet, serverIdentity, stateDirectory, purchasesPaused, manifestEnabled: process.env.SPIKE_MANIFEST !== '0' })
 const server = http.createServer({ maxHeaderSize: 1024 * 1024 }, app)
 server.listen(port, '0.0.0.0', () => console.log(`Throwaway mainnet spike at ${origin.origin}; payment wallet ${wallet ? 'ready' : 'not configured'}`))
 // Explicit development opt-in; localhost wallet authority can discard ports
