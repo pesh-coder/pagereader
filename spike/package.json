@@ -8,7 +8,8 @@
     "import:catalogue": "tsx scripts/import-catalogue.ts",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts test/*.test.mjs",
+    "test:deployment": "node --import tsx --test test/vercel-proxy.test.mjs",
     "report": "tsx scripts/report.ts",
     "preflight:recovery": "tsx scripts/recovery-preflight.ts",
     "review:permission-cost": "tsx scripts/review-permission-cost.ts"

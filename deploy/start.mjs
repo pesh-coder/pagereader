@@ -2,10 +2,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import { publicOrigin } from './hosting-config.mjs'
 
 // Deployment wrapper only. Local development continues to use npm run dev.
-const origin = process.env.RENDER_EXTERNAL_URL ?? process.env.PUBLIC_ORIGIN
-if (!origin || new URL(origin).protocol !== 'https:') throw new Error('A reachable HTTPS origin is required')
+const origin = publicOrigin(process.env)
 if (process.env.BSV_NETWORK !== 'main') throw new Error('Mainnet configuration required')
 if (process.env.PAGESTREAM_MAINTENANCE === '1') {
   const { startMaintenance } = await import('./maintenance.mjs')

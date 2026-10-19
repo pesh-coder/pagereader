@@ -1,5 +1,7 @@
 # Pagestream HTTPS deployment — prepared for review, not deployed
 
+Updated deployment choice, 2026-10-19: the owner selected **Vercel frontend + Render backend**. Use the [split-host setup and exact variables](vercel-render.md). The original single-service recommendation below is retained as an alternative; the existing paused-state migration requirements still apply. `PUBLIC_ORIGIN` now explicitly names the Vercel frontend and takes precedence over Render's assigned backend URL.
+
 Recommended shape: one paid Render Node web service with one persistent disk, serving both the React reader and the existing Express backend at one HTTPS hostname. Render provides an onrender.com URL, so an owned domain is optional. The current SQLite/per-process authentication architecture fits a single long-running instance. Do not split it onto Vercel Functions without changing persistence/session architecture. [Render Express](https://render.com/docs/deploy-node-express-app), [persistent disks](https://render.com/docs/disks), [Vercel SQLite guidance](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel).
 
 Localhost still works on the laptop. On a phone it points to the phone, not the laptop. The phone demo therefore needs a reachable hostname and trusted HTTPS. No ngrok is used or proposed.

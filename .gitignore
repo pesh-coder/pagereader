@@ -5,6 +5,7 @@ dist/
 .env.*
 !.env.example
 *.log
+.vercel/
 # Wallet/database material and private experiment exports must stay local.
 *.sqlite
 *.sqlite-*

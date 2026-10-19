@@ -26,6 +26,11 @@ services:
         value: "1"
       - key: PAGESTREAM_MAINTENANCE
         value: "1"
+      - key: SPIKE_MANIFEST
+        value: "1"
+      # Stable Vercel production origin; no /reader/ path. Overrides Render URL.
+      - key: PUBLIC_ORIGIN
+        sync: false
       - key: WALLET_STORAGE_URL
         value: https://storage.babbage.systems
       - key: SERVER_PRIVATE_KEY

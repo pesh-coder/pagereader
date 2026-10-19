@@ -37,7 +37,10 @@ export function createProbe(options: { store: Store; edition: Edition; catalogue
   app.param('editionId', (_req, res, next, id: string) => { if (!editions.has(id)) { res.status(404).json({ error: 'Edition not found' }); return }; next() })
   app.disable('x-powered-by')
   app.use(express.json({ limit: '2mb', strict: true }))
-  app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  app.use((_req, res, next) => {
+    res.set({ 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' })
+    next()
+  })
   const context = new AsyncLocalStorage<Timing>()
   app.use((_req, _res, next) => context.run({ start: performance.now(), internalizeMs: 0, dbMs: 0, authMs: 0, serverWalletMs: 0, serverWalletCalls: 0, walletInternalizeMs: 0, receiptCommitMs: 0 }, next))
   const db = <T>(fn: () => T): T => { const start = performance.now(); try { return fn() } finally { const t = context.getStore(); if (t) t.dbMs += performance.now() - start } }

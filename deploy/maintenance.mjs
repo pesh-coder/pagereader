@@ -5,7 +5,7 @@ export function startMaintenance(port) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid maintenance port')
   const server = createServer((request, response) => {
     const health = request.method === 'GET' && request.url === '/health'
-    response.writeHead(health ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    response.writeHead(health ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' })
     response.end(JSON.stringify(health
       ? { mode: 'maintenance', network: 'main', purchasesPaused: true, paymentReady: false }
       : { error: 'Pagestream is being prepared. Reading and payments are unavailable.' }))
