@@ -26,9 +26,7 @@ For a stable receiving identity, configure `spike/.env` locally from the blank [
 
 ## Review and evidence
 
-Hosting configuration: [Vercel frontend + Render backend, exact variables and setup order](deploy/vercel-render.md). No hosting project is provisioned. Reading/recovery activation and unpausing purchases are separate steps.
-
-Current budget is **$0 hosting**. The existing paid Render blueprint is not suitable for this budget. A free Render reader/API with external durable storage needs additional implementation; Vercel Hobby's payment-use restriction also changes the earlier recommendation. See [zero-cost hosting findings](spike/evidence/zero-cost-hosting-2026-10-19.md).
+Current hosting target: [Vercel frontend + the owner's existing Railway Hobby backend](deploy/vercel-railway.md), using a persistent volume for the original SQLite ledger. The root manifest and `railway.json` fix Node detection and the build/start commands. This is a personal wallet-testing POC; Railway included credits do not guarantee zero extra usage charges. No state/key migration or hosted payment acceptance is recorded. Reading/recovery activation and unpausing purchases are separate steps. Earlier [Render](deploy/vercel-render.md) and [strict-zero-cost research](spike/evidence/zero-cost-hosting-2026-10-19.md) are retained as historical alternatives.
 
 - [Authoritative plan](docs/pagestream-plan.md), [execution queue](docs/requirements-execution.md), [approved reader milestone](docs/reader-milestone-1.md).
 - [Shared receipt fee repair](spike/evidence/shared-receipt-fees-2026-10-18.md), [original-proof recovery](spike/evidence/recovery-fix-2026-10-17.md), [wallet attribution](spike/evidence/spending-originator-accounting-2026-10-17.md).

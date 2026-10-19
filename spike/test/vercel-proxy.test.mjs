@@ -20,6 +20,10 @@ test('split deployment uses the frontend origin, rejects invalid origins and lea
   }
   assert.equal(publicOrigin({ PUBLIC_ORIGIN: 'https://reader.example.com/', RENDER_EXTERNAL_URL: 'https://api.example.com' }), 'https://reader.example.com')
   assert.equal(publicOrigin({ RENDER_EXTERNAL_URL: 'https://api.example.com', PAGESTREAM_MAINTENANCE: '1' }), 'https://api.example.com')
+  assert.equal(publicOrigin({ RAILWAY_PUBLIC_DOMAIN: 'fixture.up.railway.app', PAGESTREAM_MAINTENANCE: '1' }), 'https://fixture.up.railway.app')
+  assert.equal(publicOrigin({ PUBLIC_ORIGIN: 'https://reader.example.com', RAILWAY_PUBLIC_DOMAIN: 'fixture.up.railway.app' }), 'https://reader.example.com')
+  assert.throws(() => publicOrigin({ RAILWAY_PUBLIC_DOMAIN: 'fixture.up.railway.app' }), /before activation/)
+  assert.throws(() => publicOrigin({ RAILWAY_PUBLIC_DOMAIN: 'fixture.up.railway.app/unexpected', PAGESTREAM_MAINTENANCE: '1' }), /HTTPS origin/)
   assert.throws(() => publicOrigin({ RENDER_EXTERNAL_URL: 'https://api.example.com' }), /before activation/)
   assert.throws(() => vercelConfig({}), /PAGESTREAM_BACKEND_ORIGIN/)
   assert.throws(() => vercelConfig({ PAGESTREAM_BACKEND_ORIGIN: 'https://reader.example.com', VERCEL_URL: 'reader.example.com' }), /not this Vercel frontend/)

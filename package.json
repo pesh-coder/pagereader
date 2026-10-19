@@ -1,0 +1,13 @@
+{
+  "name": "pagestream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "bash deploy/build.sh",
+    "start": "node deploy/start.mjs"
+  }
+}

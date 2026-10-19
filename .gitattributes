@@ -1,0 +1,2 @@
+# Linux deployment shells must not receive Windows CRLF line endings.
+*.sh text eol=lf

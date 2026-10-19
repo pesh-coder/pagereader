@@ -1,5 +1,7 @@
 # Pagestream HTTPS deployment — prepared for review, not deployed
 
+Latest target, 2026-10-19: the owner already has Railway Hobby and is using this as a personal wallet-testing POC. Use [Vercel + Railway setup and the Railpack build fix](vercel-railway.md). The current SQLite backend can use a Railway volume; the previously proposed Neon migration is not needed for this choice. Railway credit usage/overages still apply. The notes below preserve earlier Render/free-hosting options and are not the current instructions.
+
 Budget correction, 2026-10-19: the owner now requires **$0 hosting**. The existing `render.yaml` creates paid compute/disk and must not be applied for that budget. Free Render cannot retain this SQLite ledger. A candidate is one free Render reader/API service plus Neon Free Postgres; the remote-store/migration work is not implemented. Vercel Hobby also restricts commercial/payment use. See [verified feasibility and constraints](../spike/evidence/zero-cost-hosting-2026-10-19.md). Earlier paid/split-host instructions below are historical options, not the current budget-approved deployment.
 
 Updated deployment choice, 2026-10-19: the owner selected **Vercel frontend + Render backend**. Use the [split-host setup and exact variables](vercel-render.md). The original single-service recommendation below is retained as an alternative; the existing paused-state migration requirements still apply. `PUBLIC_ORIGIN` now explicitly names the Vercel frontend and takes precedence over Render's assigned backend URL.
