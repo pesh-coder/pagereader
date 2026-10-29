@@ -496,6 +496,9 @@ export function createReaderGateway(
         const details = [
           `Page ${page}; wallet stage: ${attempt?.state ?? 'no local attempt'}.`,
           `Server payment stage: ${checkedStatus?.intent?.state ?? (checkedStatus ? 'no intent' : 'status unavailable')}.`,
+          ...(attempt?.retryReason === 'fee-limit'
+            ? [`Wallet miner-fee quote: ${attempt.quotedFeeSats == null ? 'unknown (not enough transaction data)' : `${attempt.quotedFeeSats} sats`}; page fee limit: ${config.provisional.maxPageFeeSats} sat.`]
+            : []),
           ...(failure
             ? [`Wallet call: ${failure.method}; error code: ${failure.code ?? 'not supplied'}.`]
             : ['No wallet failure code was saved for this attempt.']),
@@ -524,7 +527,9 @@ export function createReaderGateway(
             attempt.retryReason === 'insufficient-funds'
               ? 'Your wallet needs more funds. Add funds, then try purchase again.'
               : attempt.retryReason === 'fee-limit'
-                ? 'The transaction fee is unknown or above the 1-sat page limit. Check your wallet’s fee setting, then try again.'
+                ? attempt.quotedFeeSats == null
+                  ? 'Pagestream could not verify the miner fee from the wallet’s transaction data. The unsigned page payment was cancelled. This needs a compatibility check; changing wallet settings may not help.'
+                  : `The wallet quoted a ${attempt.quotedFeeSats}-sat miner fee, above Pagestream’s ${config.provisional.maxPageFeeSats}-sat page fee limit. The unsigned page payment was cancelled; no page payment was sent.`
                 : 'Payment cancelled. Your current page is still available.',
             'retry',
           )

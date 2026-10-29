@@ -136,6 +136,7 @@ test("57-sat fee is aborted before signing or broadcast", async () => {
     "abort",
     "aborted",
   ]);
+  assert.equal(f.journal.get().quotedFeeSats, 57);
 });
 
 test("unknown parent values cannot bypass the fee cap", async () => {
@@ -150,6 +151,7 @@ test("unknown parent values cannot bypass the fee cap", async () => {
   await assert.rejects(() => preparePayment(f.wallet, f.args, f.journal));
   assert.equal(f.events.includes("sign"), false);
   assert.equal(f.events.includes("broadcast"), false);
+  assert.equal(f.journal.get().quotedFeeSats, null);
 });
 
 test("delayed signing keeps the attempt durable and does not send until proof is saved", async () => {

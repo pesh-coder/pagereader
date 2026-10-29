@@ -21,6 +21,7 @@ export interface PaymentAttempt {
   reference?: string
   txid?: string
   feeSats?: number
+  quotedFeeSats?: number | null
   proof?: {
     derivationPrefix: string
     derivationSuffix: string
@@ -105,10 +106,12 @@ export async function preparePayment(
     state: 'prepared' as const,
   }
   let feeRejected = false
+  let quotedFeeSats: number | null | undefined
   try {
     journal.save(prepared)
     const template = Transaction.fromAtomicBEEF(signable.tx)
     const fee = networkFee(template)
+    quotedFeeSats = fee
     if (fee == null || fee > config.provisional.maxPageFeeSats) {
       feeRejected = true
       throw new Error(
@@ -165,6 +168,7 @@ export async function preparePayment(
           ...prepared,
           state: 'aborted',
           retryReason: feeRejected ? 'fee-limit' : 'cancelled',
+          ...(feeRejected ? { quotedFeeSats } : {}),
         })
     }
     throw error
