@@ -9,7 +9,7 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 - Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-10-27: mainnet, payment-ready, purchases enabled.
 - **The POC is not complete:** phone payment/resume, session approval, paid-page speed and the timed six-step demo remain open.
 - The [acceptance register and remaining work](docs/project-requirements-status.md) separates implementation gaps from live checks. Team sharing is also unconfirmed.
-- The [senior review changes](docs/review-feedback-r1.md) are implemented locally; they are not yet deployed or verified with the real wallets.
+- The [senior review changes](docs/review-feedback-r1.md) are deployed. Phone previews and a native permission prompt have been observed; successful phone payment remains open.
 
 ## 1. Who is calling
 
@@ -42,7 +42,7 @@ We use **BRC-105**, the HTTP payment challenge flow. **Atomic BEEF** carries the
 
 1. The client requests an unowned page with a durable request ID. The server reserves the identity/edition/page and returns `402 Payment Required`, a 5-sat price and a derivation prefix.
 2. `AuthFetch` asks the wallet to `createAction`, paying the server's BRC-29 derived output key. Our wrapper requests an unsigned action with `noSend` (do not broadcast).
-3. The app checks the output and a maximum 1-sat miner fee, then asks the wallet to sign, still without broadcasting.
+3. The app checks the output and a default maximum 1-sat miner fee, then asks the wallet to sign, still without broadcasting. A known higher quote can be approved explicitly for that page attempt only; unknown fees remain blocked.
 4. It saves the signed proof locally before broadcasting that exact transaction.
 5. `AuthFetch` retries with `x-bsv-payment` carrying the Atomic BEEF and derivation data, alongside the original `x-bsv-request-id`.
 6. The server validates and accepts payment, commits ownership and returns the page. The old page stays visible until then; the bookmark follows display.
@@ -59,7 +59,7 @@ We use **BRC-105**, the HTTP payment challenge flow. **Atomic BEEF** carries the
 
 Wallet acceptance and SQLite commit are separate operations. Recovery now checks the saved submission and accepts a receiver merge only for that original payment, completing the missing receipt after a local restart. A fresh browser can ask the server to recover its saved proof. Local tests simulate the receiver; real-wallet crash recovery and native concurrency remain unverified.
 
-**Real cost:** the first page payment cost **62 sats: 5 price + 57 fee**. After lowering Desktop's fee rate from 250 to 1 sat/kB and restarting, two more cost **6 sats each**. The current app refuses page fees above 1 sat. Three pages total **74 sats**; two permission transactions cost **244 sats**, making **318 sats known outgoing**. [Reconciliation](spike/evidence/reader-cost-reconciliation-2026-10-17.md).
+**Real cost:** the first page payment cost **62 sats: 5 price + 57 fee**. After lowering Desktop's fee rate from 250 to 1 sat/kB and restarting, two more cost **6 sats each**. Browser 1.6.3 quoted a **23-sat fee**, making a page **28 sats total**; that attempt was cancelled by the default cap. An explicit one-page fee approval now permits testing this quote without raising the default. Three completed pages total **74 sats**; two historical permission transactions cost **244 sats**, making **318 sats known outgoing**. [Reconciliation](spike/evidence/reader-cost-reconciliation-2026-10-17.md), [phone checks](spike/evidence/hosted-readiness-2026-10-29.md).
 
 The counter includes recorded page prices and fees once per transaction; unknown fees are marked. Confirmed fees persist server-side so another browser can recover the same total. Permission setup is excluded and identified separately. Complete cross-device accounting remains unverified. “5 sats per page” alone is not an accurate total-debit claim.
 
@@ -81,7 +81,7 @@ The reader now shows its payment explanation once per tab session. Later Next cl
 
 **Allowance accounting is unreliable in the tested wallet:** the hostname allowance counted 6 sats while port-labelled page payments brought actual spending to 74. The same query affects enforcement. Offline reproduction covered toolbox 2.14.5 and 2.14.9. The recorded upstream review found Desktop PR #124 fixing future labels on an integration branch, excluding old records, outside the inspected v3.1.1 release. Its release status has not been rechecked for this rewrite. [Investigation](spike/evidence/spending-originator-accounting-2026-10-17.md), [follow-up](docs/wallet-originator-follow-up.md).
 
-**BSV Browser:** no successful phone payment or allowance observation. The phone attempt had insufficient funds; cross-device identity is unverified.
+**BSV Browser 1.6.3:** phone previews, recovery of an unpaid challenge and a grouped native permission sheet have been observed. The funded wallet quoted a 23-sat page fee; successful payment, silent subsequent purchases and allowance accounting remain unverified. Desktop and phone have different identities, so same-identity resume is still open.
 
 ## 4. What was awkward
 
