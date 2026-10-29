@@ -1,55 +1,71 @@
-# Pagestream requirements audit
+﻿# Pagestream: acceptance and remaining work
 
-Owner direction after the denial checkpoint: enable purchases for manual browser testing, retaining existing intents/proofs and the pause marker. Expired permit deletion was confirmed by owner. Explicit Railway admission/rollback setting is documented in the [deployment guide](../deploy/vercel-railway.md#owner-operated-manual-purchases). General admission and user-run approvals do not supply a new acceptance pass; C1–C11 remain unchanged.
+Updated 2026-10-29. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. The original acceptance targets are retained, including where the observed wallet behavior conflicts with them.
 
-Latest 2026-10-19 hosted test: owned Holmes recovery and 74-sat fee restoration passed. One page-7 request encountered a new 5,000/month grant; owner denied it because grant costs were outside scope. No new outgoing transaction observed; original challenged intent/journals retained. Expired remote permit needs cleanup before deployment. No hosted paid delivery or status upgrade. [Evidence](../spike/evidence/hosted-page7-denial-2026-10-19.md).
+The [senior review R1 checklist](review-feedback-r1.md) records the local reader, recovery, source-byte and production-route changes. These have not been deployed or verified with the real wallets. Removing repeated app confirmations does not satisfy native one-prompt acceptance. Tests of receiver merges simulate the receiving wallet; native duplicate-import behavior still needs verification.
 
-2026-10-19 activation update: original paused ledger imported by owner; remote hashes match the verified backup. Both hosts return library 200 and mainnet health with purchases paused. Hosted same-identity owned-page/fee/bookmark recovery and exact receiving-identity equality remain open. Earlier maintenance-only/no-deployment notes are historical. C1–C11 statuses below remain unchanged. [Verification and next gates](../spike/evidence/hosted-activation-2026-10-19.md).
+## The brief's “Done when” checklist
 
-2026-10-19 live hosting checkpoint: Vercel static shell and proxied Railway maintenance health now respond; browser library failure is confirmed as maintenance 503. Correct volume mount verified, contents/import/identity unverified because CLI SSH authentication failed. This is a narrow hosting/routing observation, not reading/payment/phone acceptance. [Evidence](../spike/evidence/hosted-maintenance-2026-10-19.md). C1–C11 and the purchase pause remain unchanged.
+| Requirement | Current result |
+|---|---|
+| Six-step story live in about 90 seconds, mainnet | Not rehearsed end to end |
+| Desktop and Browser, including cross-device bookmark | Desktop purchases and hosted owned-page recovery observed; no successful phone payment or identity-match/resume check |
+| Wallet prompts once per session | Not met: observed saved grant is monthly, with initial separate prompts; one subsequent Desktop turn was prompt-free |
+| Underpaid/replayed requests refused | Local coverage passes; existing-proof live-local replay checks pass; full native negative cases remain |
+| Learnings written and shared | Rewritten for review; repository publication was authorized previously, but team delivery/receipt is not confirmed |
 
-Latest hosting update, 2026-10-19: the owner has an existing Railway Hobby plan and is testing a personal own-wallet POC. Vercel + Railway with a persistent volume retains SQLite; the earlier Neon migration proposal is not needed. A malformed dashboard command and missing root manifest caused reported build failures. Root Node/Railpack config and setup corrections are implemented, with [evidence](../spike/evidence/railway-build-fix-2026-10-19.md); hosted activation/import/recovery is not yet verified. Purchases remain paused and C1–C11 are unchanged. Earlier budget/hosting notes below are historical checkpoints.
+## Detailed acceptance register
 
-Current hosting constraint, 2026-10-19: **$0**. Paid Render/disk is no longer an acceptable deployment target. Free Render needs external durable storage and a safe ledger migration; the current implementation still requires SQLite. Vercel Hobby's payment-use restriction also changes the prior recommendation. [Feasibility evidence](../spike/evidence/zero-cost-hosting-2026-10-19.md). This is an unimplemented deployment dependency; C1–C11 and the pause remain unchanged.
+FAIL means an observed miss remains open. UNRESOLVED means the complete acceptance evidence is missing; neither label erases a narrow implementation pass.
 
-2026-10-19 deployment update: Vercel frontend + Render backend configuration, variable templates, origin precedence and no-cache proxy handling are prepared. Client/spike builds and **62 local tests PASS**. No hosting projects exist yet; migration/proxy/phone acceptance and payment activation are not completed. Purchases remain paused and C1–C11 statuses below remain unchanged. [Evidence](../spike/evidence/split-host-readiness-2026-10-19.md), [setup](../deploy/vercel-render.md).
-
-Publication note, 2026-10-19: the owner's subsequent instruction authorizes publishing reviewed repository files to GitHub. Earlier local-only wording below records the prior checkpoint. The handoff remains a review draft, no direct team notification is authorized, and all acceptance statuses remain unchanged. See [commit organization](commit-history.md).
-
-Updated 2026-10-18. The [plan v3](pagestream-plan.md) remains authoritative. Existing repository, mainnet, npm development server and original pilcrow branding are preserved. No ngrok, new spending, grant changes or external sending is authorized by this audit. The team handoff stays local for the user's review.
-
-**Overall: C1/C2/C4 FAIL; C3/C5/C6/C7/C8/C9/C10/C11 UNRESOLVED.** Implementation and narrow local/native passes do not upgrade the full targets. Historical checkpoints are preserved in [the archived audit](history/project-requirements-status-before-consolidation-20261017T185434Z.md).
-
-| Criterion | Status | Current evidence and remaining acceptance |
+| Criterion | Status | Evidence and what remains |
 |---|---|---|
-| C1: wallet-free browsing/previews, zero calls/errors on both devices | FAIL | All eight editions have two public pages. Desktop browser/library checks avoid the wallet module; local isolation tests pass. The prior phone error and full zero-error physical-phone run remain unresolved. Browser-host preload/discovery errors are recorded, not declared clean. |
-| C2: one native prompt from first visit through 20 paid turns | FAIL | Earlier Desktop sessions showed separate protocol/spending prompts. One later grouped grant saved 5,000 sats/month for localhost and cost 5 sats; one subsequent page purchase had no prompt. Full clean-origin first-visit/20-turn evidence in both wallets is absent. |
-| C3: paid page-turn p95 at most 500 ms, 20 turns per wallet | UNRESOLVED | One historical paid response was 9.01 s; request-to-frame marker 47.33 s. Later owned reads were 2.28 s cold and 67.6/59.6 ms warm, not paid p95. Stage instrumentation and strict schema-2 cohort reporting are ready; no qualifying paid cohorts exist. |
-| C4: accurate always-visible pending/confirmed/unresolved spending | FAIL | Reader headline includes all recorded states by unique txid. Verified confirmed-receipt fees now persist server-side; fresh browser ledgers recover 15 page sats + 59 miner-fee sats = 74 without wallet history or local proofs. Per-page fees/totals are explicit. Separate permission costs remain excluded. Native allowance still undercounts 6 versus 74; grant/uncertain cross-device accounting and enforcement remain unverified. [Repair evidence](../spike/evidence/shared-receipt-fees-2026-10-18.md). |
-| C5: underpay 400; wrong-page/identity replay 409 | UNRESOLVED | Synthetic underpayment and replay cases pass. Original-proof wrong-page/wrong-edition requests returned 409 against the existing local mainnet backend without new spending. Full native/mainnet underpayment and cross-identity evidence remains incomplete. |
-| C6: exactly one charge per page, lost delivery/two tabs/two devices | UNRESOLVED | Durable original-proof recovery, atomic receipt/replay/ownership commit and local fault/race tests pass. An already-owned response was dropped and recovered with the original proof, unchanged SQLite. Newly charged lost delivery, prolonged native approvals and concurrent new purchases across tabs/devices still need controlled live evidence. |
-| C7: no account/email/password/card in the flow or app DB | UNRESOLVED | Implemented reader uses identity keys, with no product signup or Connect button; source/schema inspection is narrower than a complete two-device live flow audit. Generated starter signed-request authentication is not used. |
-| C8: matching identity and last displayed bookmark on phone | UNRESOLVED | Same-browser reload/owned resume works. Explicit fresh-device Resume discovery is implemented and desktop-tested; missing ownership cannot trigger a payment. Funded supported Browser identity and physical phone resume remain unverified. |
-| C9: mainnet with Desktop and Browser | UNRESOLVED | Desktop mainnet receipts/history verified; Browser version/funding/identity and complete mainnet cohort remain open. |
-| C10: six-step story in about 90 seconds | UNRESOLVED | [Runbook](mainnet-demo-runbook.md) prepared. HTTPS deployment, physical shortcut/wallet access, payment gates and timed two-device demonstration remain open. |
-| C11: four-section learnings written and shared | UNRESOLVED | [LEARNINGS](../LEARNINGS.md) and [handoff draft](team-handoff-review.md) are local and ready for user review. Sharing is intentionally deferred per the user's instruction; nothing has been sent externally. |
+| C1 Free browsing/previews, no wallet or errors on both devices | FAIL | Eight books and two public pages each; desktop/local checks pass. Retest the phone's prior free-page HTTP 502 and verify no wallet calls. |
+| C2 One native prompt through first visit and 20 paid turns | FAIL | Grouped 5,000/month grant cost 5 sats; next page had zero prompts. Session scope is not met; clean-origin cohorts on both wallets are missing. |
+| C3 Paid page p95 ≤500 ms, 20 turns per wallet | UNRESOLVED | One paid sample: 9.01 s HTTP, 47.33 s request-to-frame marker. No qualifying cohort. Diagnose/optimize and measure; warm owned reads do not count. |
+| C4 Accurate always-visible spend | FAIL | Confirmed receipt fees persist across browsers: 15 page sats + 59 fees = 74. Wallet allowance counted only 6; permission and uncertain cross-device costs remain incomplete. |
+| C5 Underpay 400; wrong-page/identity replay 409 | UNRESOLVED | Local tests pass; existing-proof wrong-page/edition live-local requests returned 409. Native mainnet underpayment/cross-identity evidence remains. |
+| C6 Exactly one charge per page, including lost delivery/two tabs/two devices | UNRESOLVED | Durable proof recovery and local fault/race coverage pass. The local receiver fixture now recovers after acceptance/receipt failure and SQLite restart using the original server proof. Actual receiving-wallet duplicate-import behavior, newly charged live lost delivery and native races remain. |
+| C7 No signup/email/password/card/profile | UNRESOLVED | Source/schema use identity keys without account fields. Complete two-device flow audit remains. |
+| C8 Same identity and displayed bookmark on phone | UNRESOLVED | Desktop Resume and hosted owned recovery work without purchasing. Actual phone identity match and resume remain. |
+| C9 Mainnet on both wallets | UNRESOLVED | Three Desktop page receipts verified; no successful Browser payment. |
+| C10 Six-step story in ~90 seconds | UNRESOLVED | HTTPS reading is hosted; phone wallet/shortcut checks, leave-mid-chapter observation and timed rehearsal remain. |
+| C11 Learnings written/shared | UNRESOLVED | Short note now written; team sharing not confirmed. |
 
-## Verified implementation and current safety state
+## Work still needed
 
-Eight complete immutable Gutenberg editions: Holmes 265 pages, Pride 316, Frankenstein 188, Dorian 196, Dracula 362, Meditations 152, Metamorphosis 44 and Alice 73. Edition-scoped delivery, ownership and displayed-page bookmarks are implemented. The legacy technical probe retains its 43-page Holmes window. Original covers and pilcrow header/favicon/home icons remain.
+**Implementation or stack gaps**
 
-The server's five-sat page price is separate from fees. Verified page debits are 62, 6 and 6 sats (74 total); two permission debits are 239 and 5 (244 total). Known Desktop outgoing total: 318 sats across five transactions. These are not an all-in price promise or full cross-device total.
+- Resolve the session-vs-monthly approval requirement: establish supported wallet behavior or explicitly agree a changed demo requirement. A monthly grant is not a session pass. No wallet modification is in scope.
+- Validate supported allowance enforcement and legacy port-labelled spending. Reader accounting does not repair the wallet's limit query.
+- Investigate and improve paid-page latency. The current deliberate no-paid-prefetch design avoids charging for unread pages; it has not met 500 ms.
+- Finish permission-cost provenance and uncertain cross-device spend accounting, then verify the visible total on both devices.
+- Address defects exposed by the remaining native recovery/race and phone tests. Do not assume missing evidence automatically requires new features.
 
-The original receiving identity/key, SQLite and uncertain intents/proofs/browser journals are preserved. Last read-only snapshots retain three purchases, five intents, three replay claims and two saved proofs, pause present and no live permit. Bookmarks are independent of payment. No timeout creates a replacement transaction. No automatic paid purchase/prefetch is allowed.
+**Live checks still needed**
 
-Official Desktop PR #124 addresses future originator labels on an integration branch outside the inspected published v3.1.1 release and explicitly excludes historical port-labeled actions. The official interceptor passed an offline mock review; no funded wallet was replaced or grants modified. Reader txid reconciliation does not repair native allowance enforcement.
+- Fund/use BSV Browser with the intended wallet identity; compare public identity keys and verify phone purchase, owned-page resume and bookmark continuity.
+- Retest wallet-free previews on the phone; observe prompt count, scope, cost and allowance consumption on both wallets.
+- Collect 20 distinct paid-page samples per wallet, preserving slow/failed samples; verify underpayment, replay, lost response and concurrent purchases.
+- Close the tab mid-chapter and confirm no additional purchases start. An already-submitted transaction may finish after close; closing cannot cancel it.
+- Rehearse the six-step mainnet story in about 90 seconds, then share the reviewed note with the team.
 
-Latest validation: client build/lint, spike build and **59 local tests PASS**. New browser tests are guarded read-only; no new sats spent. Phone/HTTPS/mainnet acceptance remains separate.
+These are the remaining POC requirements, not a request to add accounts, wallet development, payouts or further design polish. Python remains optional and was not attempted.
 
-## Evidence and next gates
+## Current facts and resolved documentation conflicts
 
-- [Catalogue](../spike/evidence/catalogue-2026-10-17.md), [recovery safety](../spike/evidence/recovery-fix-2026-10-17.md), [native grant](../spike/evidence/grant-only-run-2026-10-17.md), [page 6](../spike/evidence/page6-allowance-test-2026-10-17.md).
-- [Wallet attribution](../spike/evidence/spending-originator-accounting-2026-10-17.md), [reader accounting](../spike/evidence/reader-cost-reconciliation-2026-10-17.md), [read-only recovery/resume and official fix](../spike/evidence/read-only-readiness-2026-10-17.md).
-- [Latency investigation](../spike/evidence/latency-investigation-2026-10-17.md), [cohort-report readiness](../spike/evidence/timing-report-readiness-2026-10-17.md), [nine-requirement execution queue](requirements-execution.md).
+- **Hosting:** Vercel + the owner's existing Railway Hobby service/volume. Original SQLite snapshot import checksums matched; hosted owned recovery restored pages 3/5/6 and 74 sats. Render/Neon proposals are historical. [Activation](../spike/evidence/hosted-activation-2026-10-19.md), [recovery](../spike/evidence/hosted-page7-denial-2026-10-19.md).
+- **Purchases:** public frontend `/health` checked 2026-10-27 returned `status:ok`, `network:main`, `paymentReady:true`, `purchasesPaused:false`. Effective admission is enabled; this does not expose the exact configured environment value. The explicit switch is `PAGESTREAM_PURCHASES_ENABLED=1` to enable, `0` to pause after redeploy. No setting was changed for this rewrite.
+- **Permit:** owner-confirmed deletion of the expired permit is recorded in the [current setup guide](../deploy/vercel-railway.md). This is not a fresh remote filesystem inspection. Preserve the denied page-7 intent.
+- **Receiving identity:** the hosted manifest counterparty matched the original local public identity in the hosted recovery evidence. Deployed private-key equality was not independently inspected; do not describe public metadata as that proof.
+- **Costs:** 318 sats across five known debit transactions explains the recorded page/permission amounts: pages 74, grants 244. There is no separate unexplained amount in that reconciliation; it does not prove the complete wallet or cross-device history.
+- **Allowance:** `walletLimitSats: 5000` requests the manifest allowance; the observed grant is wallet-managed and monthly. It is not a server-side session cap.
+- **Tests:** `npm.cmd test` in `spike` on 2026-10-29: **75 passed, 0 failed**. Client build/lint and server/spike build pass. Earlier 59/62/63 counts are historical. Local tests do not complete live acceptance.
+- **Hosting terms/cost:** the recorded decision was a private own-wallet POC on existing Railway Hobby, not a guaranteed $0 deployment or a demonstrated Vercel policy exception. The repository does not establish plan compliance; no new provider-policy determination is claimed here. See the [setup guide](../deploy/vercel-railway.md).
+- **Upstream fix:** PR #124 release/legacy behavior is described as of the recorded investigation. Current release status was not rechecked in this documentation update.
 
-One Render service with persistent disk is recommended for shared HTTPS; [local deployment files](../deploy/README.md) and a consistent paused snapshot are prepared. Initial maintenance mode was process-tested locally: health only, paymentReady false, no wallet/key requirement or database initialization, and all reading/payment routes unavailable. Normal startup refuses a missing imported ledger. No service was purchased/deployed and actual hosted import/activation is untested. Localhost remains correct for laptop development; phone localhost refers to the phone. Hosting account/cost/cutover approval, physical-device evidence, a validated wallet attribution policy and exact live experiment authorization remain external gates. Handoff review/sharing stays local by instruction.
+## Evidence and history
+
+[Payment/recovery](../spike/evidence/recovery-fix-2026-10-17.md) · [grant](../spike/evidence/grant-only-run-2026-10-17.md) · [shared receipt fees](../spike/evidence/shared-receipt-fees-2026-10-18.md) · [accounting bug](../spike/evidence/spending-originator-accounting-2026-10-17.md) · [latency](../spike/evidence/latency-investigation-2026-10-17.md) · [timing readiness](../spike/evidence/timing-report-readiness-2026-10-17.md) · [demo runbook](mainnet-demo-runbook.md).
+
+The [previous acceptance document](history/project-requirements-status-before-simplification-20261027.md) is preserved unchanged. Its relative links retain their original location assumptions. Dated evidence records describe their checkpoint, not the current operating state.

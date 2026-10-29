@@ -4,12 +4,12 @@ This is a prepared script, not authorization to spend. Do not start the paid ste
 
 | Target time | Story step | Evidence to retain |
 |---|---|---|
-| 0–10s | Open the library and choose a classic | Eight complete editions, no signup/Connect button; zero wallet calls |
+| 0–10s | Open the library and choose a classic | Eight complete editions, no signup; browsing does not request a wallet |
 | 10–20s | Read free pages 1 and 2 | Correct text and page boundaries; zero wallet calls/errors |
 | 20–40s | Explicitly request one authorized unowned paid page | Actual native prompt count/wording; keep current text until server delivery |
 | 40–55s | Continue the authorized paid turns | New text only after server response; exact txids, prices and fees; no paid prefetch |
 | 55–65s | Leave and reopen the book | No background spending; same-page ownership reread; latest displayed bookmark |
-| 65–90s | Open the same HTTPS reader on the funded phone; Pages → Resume saved page | Same public identity, correct server bookmark and original owned content without another page payment; installed ¶ shortcut if that is the agreed path |
+| 65–90s | Open the same HTTPS reader on the funded phone; Continue reading | Same public identity shown in the wallet menu, correct server bookmark and original owned content without another page payment |
 
 The paid steps must have an explicit page/fee/grant budget before execution; this document does not assign one. The operator must retain slow/cold/failed samples. Timing 90 seconds does not override the 20-turn per-wallet p95 criterion. A read-only rehearsal using existing owned pages is useful but is not the required new-payment demo.
 
