@@ -83,7 +83,7 @@ The reader now shows its payment explanation once per tab session. Later Next cl
 
 **BSV Browser 1.6.3:** phone previews, recovery of an unpaid challenge and a grouped native permission sheet have been observed. The user reports page 3 opened and the reader shows 28 sats spent; page 4 quotes another 23-sat fee. Wallet-debit reconciliation, silent subsequent purchases and allowance accounting remain unverified. Desktop and phone have different identities, so same-identity resume is still open.
 
-The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. A [draft upstream request](docs/browser-fee-rate-upstream.md) describes the supported fee-setting change needed; it has not been submitted. Raising Pagestream's cap does not lower wallet fees.
+The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176) requests suitable fees for ordinary micropayment users; submitted 2026-10-29 and awaiting maintainer response. Raising Pagestream's cap does not lower wallet fees.
 
 ## 4. What was awkward
 

@@ -1,10 +1,10 @@
 # BSV Browser: configurable transaction fee rate
 
-Draft upstream issue, prepared 2026-10-29. Not submitted. The installed wallet has not been modified.
+Submitted 2026-10-29 as [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176). Awaiting maintainer response. The installed wallet has not been modified. The [submitted issue body](browser-fee-rate-issue-body.md) excludes the local planning notes formerly in this file.
 
-## Suggested title
+## Submitted title
 
-Expose a policy-validated fee-rate setting for local wallets: 100 sat/kB makes a 5-sat page cost 28 sats
+Policy-appropriate micropayment fees: a 5-sat page quotes a 23-sat miner fee
 
 ## Problem and reproduction
 
@@ -36,8 +36,8 @@ Keep the existing default as a fallback rather than replacing 100 with an uncond
 4. Test against unsigned/noSend creation first. With explicit operator approval, complete one mainnet page and reconcile the actual page price, miner fee and wallet debit.
 5. Run several new paid page turns without Pagestream's higher-fee exception. Measure prompt count and allowance accounting separately; this fee fix does not prove session approval or latency acceptance.
 
-## Scope and next action
+## Tracking and next action
 
-This is a wallet-package gap, outside the original POC's instruction to leave out building/modifying wallets. No installed-wallet alteration, custom APK, funding/key migration or upstream publication was performed. Existing GitHub issue searches in Browser and the shared wallet repository did not reveal this configurable-rate request; recheck before filing.
+Issue [#176](https://github.com/bsv-blockchain/bsv-browser/issues/176) is open in `bsv-blockchain/bsv-browser`. The requested implementation belongs to the shared `bsv-blockchain/bsv-wallet/packages/expo-wallet-toolbox` package. No wallet code, custom build, key migration or installed-wallet setting was changed as part of submitting it.
 
-Proposed destination: `bsv-blockchain/bsv-browser` for the user-visible issue, with implementation in `bsv-blockchain/bsv-wallet/packages/expo-wallet-toolbox`. Submit this draft only when instructed. A maintainer-supported release is required before the user can change this rate in the installed Browser. Until then, Pagestream's default cap and explicit one-page higher-fee approval remain available; neither lowers the fee.
+Await maintainer guidance on policy-appropriate defaults or a supported fee-rate setting, then verify the recommended official build with an unsigned page quote before a new paid test. Until then, Pagestream's default cap and explicit one-page higher-fee approval remain available; neither lowers the fee. Direct maintainer outreach remains for the user to send.
