@@ -28,6 +28,7 @@ export default function App() {
   const [target, setTarget] = useState(3)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [paymentDetails, setPaymentDetails] = useState<string[]>([])
   const [errorAction, setErrorAction] = useState<
     'connect' | 'retry' | 'check' | null
   >(null)
@@ -103,11 +104,17 @@ export default function App() {
     if (lock.current) return
     lock.current = true
     setBusy(true)
-    setError('')
-    setErrorAction(null)
+    if (!recoveryOnly) {
+      setError('')
+      setPaymentDetails([])
+      setErrorAction(null)
+    }
     setPanel(null)
     try {
       const body = await gateway.page(selected, number, recoveryOnly)
+      setError('')
+      setPaymentDetails([])
+      setErrorAction(null)
       setBook(selected)
       setPage(body)
       setFailedPage(null)
@@ -116,6 +123,9 @@ export default function App() {
         article.current?.focus({ preventScroll: true }),
       )
     } catch (failure) {
+      setPaymentDetails(
+        failure instanceof ReaderError ? failure.details ?? [] : [],
+      )
       setError(
         failure instanceof Error
           ? failure.message
@@ -344,6 +354,14 @@ export default function App() {
       {error && (
         <div className="notice" role="alert">
           <p>{error}</p>
+          {paymentDetails.length > 0 && (
+            <details className="payment-details">
+              <summary>Payment details</summary>
+              <ul>
+                {paymentDetails.map((detail) => <li key={detail}>{detail}</li>)}
+              </ul>
+            </details>
+          )}
           {errorAction === 'connect' && (
             <>
               <WalletGuidance />
@@ -364,7 +382,7 @@ export default function App() {
               disabled={busy}
               onClick={() => void turn(book, failedPage, true)}
             >
-              Check payment
+              {busy ? 'Checking payment…' : 'Check payment'}
             </button>
           )}
           {errorAction === 'check' &&

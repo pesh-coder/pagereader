@@ -17,6 +17,7 @@ export interface PaymentAttempt {
     | 'aborted'
   retryReason?: 'cancelled' | 'insufficient-funds' | 'fee-limit'
   walletRequestStarted?: boolean
+  lastFailure?: { method: string; code?: number | string }
   reference?: string
   txid?: string
   feeSats?: number

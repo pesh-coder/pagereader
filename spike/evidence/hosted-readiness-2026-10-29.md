@@ -55,3 +55,11 @@ Local wallet-free preview verification against the production client build:
 - At 1280x800, the pager retains its fixed desktop layout.
 
 Physical BSV Browser retest is still required after deployment; the simulation does not reproduce the native app itself.
+
+## Phone page-3 failure
+
+The user confirmed Next became reachable after the layout fix. The phone still cannot open paid page 3. The user observed Pagestream's cost explanation, no native wallet approval, no apparent debit, and an uncertain-payment notice. Repeated Check payment appeared to do nothing. No apparent debit is not proof that a wallet action was never created.
+
+The gateway's unresolved-attempt guard returned the same generic notice on each recovery check, hiding the checked result. The update now distinguishes a completed check with no purchase from the initial failure, keeps a visible checking state, and exposes expandable Payment details: local attempt stage, server intent stage, latest HTTP result, and wallet method/error code where available. New wallet failures save only a method/code marker alongside the existing attempt; no raw wallet messages, arguments or stacks are added to that marker. Earlier attempts may have no saved failure code.
+
+Validation: 76 local tests pass, including a regression that checks the unresolved result and failure details while asserting zero replacement payment calls. Client build and lint pass. The existing proof/retry guards are retained. This is an observability/recovery-feedback fix, not evidence that Browser payments now work. Device details are needed to diagnose the original failure.

@@ -40,6 +40,7 @@ interface Status {
 export type HistoryState = 'idle' | 'loading' | 'ready' | 'error'
 export class ReaderError extends Error {
   readonly action: 'connect' | 'retry' | 'check'
+  details?: string[]
   constructor(message: string, action: 'connect' | 'retry' | 'check') {
     super(message)
     this.action = action
@@ -101,6 +102,9 @@ export function createReaderGateway(
     allowSpend = false
   let paused = true
   let history: HistoryState = 'idle'
+  let lastWalletFailure: { method: string; code?: number | string } | undefined
+  let lastHttp: { path: string; status: number } | undefined
+  let checkedStatus: Status | undefined
   const api = (path: string, selectedEdition = edition) =>
     `/api/editions/${encodeURIComponent(selectedEdition)}/${path}`
   const checkPage = (body: ReaderPage, book: Book, page: number) => {
@@ -199,8 +203,15 @@ export function createReaderGateway(
       walletOpener ?? (await import('../payments/wallet-client.js')).openWallet
     try {
       wallet = await openWallet({
-        call: (call) => console.debug('Wallet timing', call),
-        http: (http) => console.debug('HTTP timing', http),
+        call: (call) => {
+          console.debug('Wallet timing', call)
+          if (!call.ok && call.method !== 'page payment workflow')
+            lastWalletFailure = { method: call.method, code: call.error?.code }
+        },
+        http: (http) => {
+          console.debug('HTTP timing', http)
+          lastHttp = { path: http.path, status: http.status }
+        },
         spend: saveSpend,
         currentPage: () => requested,
         canSpend: () => allowSpend,
@@ -374,9 +385,13 @@ export function createReaderGateway(
         throw new Error('Open page 3 first to access your owned pages.')
       requested = page
       allowSpend = false
+      checkedStatus = undefined
+      lastHttp = undefined
+      lastWalletFailure = undefined
       try {
         await acquire()
         const status = await readOnly<Status>(api(`status/${page}`))
+        checkedStatus = status
         let body: ReaderPage
         if (status.purchase) body = await readOnly(api(`owned/${page}`))
         else {
@@ -403,7 +418,9 @@ export function createReaderGateway(
               retryable = false
             if ((attempt || status.intent) && !retryable)
               throw new ReaderError(
-                'We couldn’t confirm whether the payment completed. Check payment before trying another purchase.',
+                recoveryOnly
+                  ? 'Payment checked: no completed page purchase was found. The earlier request is still unresolved, so a new payment remains blocked. See Payment details below.'
+                  : 'We couldn’t confirm whether the payment completed. Check payment before trying another purchase.',
                 'check',
               )
             if (retryable && recoveryOnly)
@@ -459,6 +476,21 @@ export function createReaderGateway(
         }
         return body
       } catch (error) {
+        const attempt = wallet?.getAttempt(edition, page)
+        const failure = attempt?.lastFailure ?? lastWalletFailure
+        const details = [
+          `Page ${page}; wallet stage: ${attempt?.state ?? 'no local attempt'}.`,
+          `Server payment stage: ${checkedStatus?.intent?.state ?? (checkedStatus ? 'no intent' : 'status unavailable')}.`,
+          ...(failure
+            ? [`Wallet call: ${failure.method}; error code: ${failure.code ?? 'not supplied'}.`]
+            : ['No wallet failure code was saved for this attempt.']),
+          ...(lastHttp ? [`Last HTTP result: ${lastHttp.status} (${lastHttp.path}).`] : []),
+        ]
+        const reported = (message: string, action: 'connect' | 'retry' | 'check') => {
+          const result = new ReaderError(message, action)
+          result.details = details
+          return result
+        }
         for (const spend of loadSpends().values())
           if (
             spend.identityKey === wallet?.identityKey &&
@@ -467,11 +499,13 @@ export function createReaderGateway(
             spend.state === 'pending'
           )
             saveSpend({ ...spend, state: 'unresolved' })
-        if (error instanceof ReaderError) throw error
+        if (error instanceof ReaderError) {
+          error.details = details
+          throw error
+        }
         console.warn('Page request failed', error)
-        const attempt = wallet?.getAttempt(edition, page)
         if (attempt?.state === 'aborted')
-          throw new ReaderError(
+          throw reported(
             attempt.retryReason === 'insufficient-funds'
               ? 'Your wallet needs more funds. Add funds, then try purchase again.'
               : attempt.retryReason === 'fee-limit'
@@ -480,21 +514,24 @@ export function createReaderGateway(
             'retry',
           )
         if (attempt?.state === 'prepared')
-          throw new ReaderError(
+          throw reported(
             'The unsigned payment needs to be cancelled before you try again. Choose Check payment.',
             'check',
           )
         if (attempt && attempt.state !== 'reserved')
-          throw new ReaderError(
+          throw reported(
             'We couldn’t confirm whether the payment completed. Your current page is still available.',
             'check',
           )
         if (attempt?.state === 'reserved')
-          throw new ReaderError(
+          throw reported(
             'The payment request could not start. Your current page is still available.',
             'retry',
           )
-        throw error
+        throw reported(
+          error instanceof Error ? error.message : 'The page request failed.',
+          'check',
+        )
       } finally {
         allowSpend = false
         changed()

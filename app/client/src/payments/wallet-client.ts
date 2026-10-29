@@ -123,6 +123,26 @@ export async function openWallet(callbacks: {
           })
           return result
         } catch (error) {
+          // Keep a small, non-secret failure marker across reloads. Do not save
+          // wallet arguments, error messages, stacks or transaction bytes here.
+          try {
+            const attempt = journal.get()
+            if (attempt) {
+              const code = walletError(error).code
+              journal.save({
+                ...attempt,
+                lastFailure: {
+                  method: String(property),
+                  ...(typeof code === 'number' ||
+                  (typeof code === 'string' && /^[\w-]{1,80}$/.test(code))
+                    ? { code }
+                    : {}),
+                },
+              })
+            }
+          } catch {
+            // Retain the original error if browser storage is unavailable.
+          }
           callbacks.call({
             method: String(property),
             ms: performance.now() - started,

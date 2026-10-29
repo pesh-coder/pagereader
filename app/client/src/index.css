@@ -916,6 +916,15 @@ dialog .panel-heading button {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.payment-details {
+  overflow-wrap: anywhere;
+  margin-block: 12px;
+}
+.payment-details summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding-block: 10px;
+}
 .sr-only {
   position: absolute;
   width: 1px;

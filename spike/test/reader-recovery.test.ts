@@ -143,6 +143,9 @@ function fixture(t: TestContext) {
         txid: purchase.txid,
       };
     },
+    savedFailure: () => {
+      attempt!.lastFailure = { method: "createAction", code: "MOBILE_FAILURE" };
+    },
   };
 }
 
@@ -180,6 +183,24 @@ test("Check payment after cancellation offers an explicit retry without starting
     (error) => error instanceof ReaderError && error.action === "retry",
   );
   assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+});
+
+test("Check payment reports unresolved stages and saved wallet code without creating a replacement", async (t) => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.setAttempt("preparing");
+  f.savedFailure();
+  await assert.rejects(f.gateway.page(book, 3, true), (error) => {
+    assert.ok(error instanceof ReaderError);
+    assert.match(error.message, /Payment checked: no completed page purchase/);
+    assert.equal(error.action, "check");
+    assert.ok(error.details?.includes("Page 3; wallet stage: preparing."));
+    assert.ok(error.details?.includes("Server payment stage: challenged."));
+    assert.ok(error.details?.some((line) => line.includes("createAction") && line.includes("MOBILE_FAILURE")));
+    return true;
+  });
+  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+  assert.deepEqual(f.ids, []);
 });
 
 test("fresh browser recovers the server-submitted proof without starting a wallet action", async (t) => {
