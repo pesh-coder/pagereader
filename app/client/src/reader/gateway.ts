@@ -38,9 +38,17 @@ interface Status {
   intent: { request_id: string; state: string; txid: string | null } | null
 }
 export type HistoryState = 'idle' | 'loading' | 'ready' | 'error'
+export interface PageFeeApproval {
+  identityKey: string
+  edition: string
+  page: number
+  requestId: string
+  maxFeeSats: number
+}
 export class ReaderError extends Error {
   readonly action: 'connect' | 'retry' | 'check'
   details?: string[]
+  feeApproval?: PageFeeApproval
   constructor(message: string, action: 'connect' | 'retry' | 'check') {
     super(message)
     this.action = action
@@ -49,7 +57,7 @@ export class ReaderError extends Error {
 type OpenWallet = (typeof import('../payments/wallet-client.js'))['openWallet']
 export interface ReaderGateway {
   library(): Promise<{ books: Book[]; purchasesPaused: boolean }>
-  page(book: Book, page: number, recoveryOnly?: boolean): Promise<ReaderPage>
+  page(book: Book, page: number, recoveryOnly?: boolean, feeApproval?: PageFeeApproval): Promise<ReaderPage>
   bookmark(book: Book, page: number, displayedAt: number): Promise<void>
   receipts(): Spend[]
   owned(): Purchase[]
@@ -350,7 +358,7 @@ export function createReaderGateway(
           displayedAt,
         })
     },
-    async page(book, page, recoveryOnly = false) {
+    async page(book, page, recoveryOnly = false, feeApproval) {
       if (
         book.mode !== 'reader' ||
         !book.editionId ||
@@ -456,7 +464,16 @@ export function createReaderGateway(
             const requestId = retryable
               ? attempt!.requestId
               : crypto.randomUUID()
-            wallet!.beginPayment(edition, page, requestId)
+            if (feeApproval && (
+              recoveryOnly || !attempt || attempt.state !== 'aborted' ||
+              attempt.retryReason !== 'fee-limit' ||
+              feeApproval.identityKey !== wallet!.identityKey ||
+              feeApproval.edition !== edition || feeApproval.page !== page ||
+              feeApproval.requestId !== requestId ||
+              !Number.isSafeInteger(feeApproval.maxFeeSats) ||
+              feeApproval.maxFeeSats !== attempt.quotedFeeSats
+            )) throw new ReaderError('The fee quote changed or belongs to another payment. Review the current page quote again.', 'check')
+            wallet!.beginPayment(edition, page, requestId, feeApproval?.maxFeeSats)
             allowSpend = true
             body = await paidResponse(
               await wallet!.auth.fetch(location.origin + api(`pages/${page}`), {
@@ -497,7 +514,7 @@ export function createReaderGateway(
           `Page ${page}; wallet stage: ${attempt?.state ?? 'no local attempt'}.`,
           `Server payment stage: ${checkedStatus?.intent?.state ?? (checkedStatus ? 'no intent' : 'status unavailable')}.`,
           ...(attempt?.retryReason === 'fee-limit'
-            ? [`Wallet miner-fee quote: ${attempt.quotedFeeSats == null ? 'unknown (not enough transaction data)' : `${attempt.quotedFeeSats} sats`}; page fee limit: ${config.provisional.maxPageFeeSats} sat.`]
+            ? [`Wallet miner-fee quote: ${attempt.quotedFeeSats == null ? 'unknown (not enough transaction data)' : `${attempt.quotedFeeSats} sats`}; attempt fee limit: ${attempt.approvedMaxFeeSats ?? config.provisional.maxPageFeeSats} sats.`]
             : []),
           ...(failure
             ? [`Wallet call: ${failure.method}; error code: ${failure.code ?? 'not supplied'}.`]
@@ -507,6 +524,15 @@ export function createReaderGateway(
         const reported = (message: string, action: 'connect' | 'retry' | 'check') => {
           const result = new ReaderError(message, action)
           result.details = details
+          if (
+            attempt?.state === 'aborted' && attempt.retryReason === 'fee-limit' &&
+            typeof attempt.quotedFeeSats === 'number' &&
+            Number.isSafeInteger(attempt.quotedFeeSats) &&
+            attempt.quotedFeeSats > config.provisional.maxPageFeeSats
+          ) result.feeApproval = {
+            identityKey: wallet!.identityKey, edition, page,
+            requestId: attempt.requestId, maxFeeSats: attempt.quotedFeeSats,
+          }
           return result
         }
         for (const spend of loadSpends().values())
@@ -518,8 +544,7 @@ export function createReaderGateway(
           )
             saveSpend({ ...spend, state: 'unresolved' })
         if (error instanceof ReaderError) {
-          error.details = details
-          throw error
+          throw reported(error.message, error.action)
         }
         console.warn('Page request failed', error)
         if (attempt?.state === 'aborted')
@@ -529,7 +554,7 @@ export function createReaderGateway(
               : attempt.retryReason === 'fee-limit'
                 ? attempt.quotedFeeSats == null
                   ? 'Pagestream could not verify the miner fee from the wallet’s transaction data. The unsigned page payment was cancelled. This needs a compatibility check; changing wallet settings may not help.'
-                  : `The wallet quoted a ${attempt.quotedFeeSats}-sat miner fee, above Pagestream’s ${config.provisional.maxPageFeeSats}-sat page fee limit. The unsigned page payment was cancelled; no page payment was sent.`
+                  : `The wallet quoted a ${attempt.quotedFeeSats}-sat miner fee, above this attempt’s ${attempt.approvedMaxFeeSats ?? config.provisional.maxPageFeeSats}-sat fee limit. The unsigned page payment was cancelled; no page payment was sent.`
                 : 'Payment cancelled. Your current page is still available.',
             'retry',
           )

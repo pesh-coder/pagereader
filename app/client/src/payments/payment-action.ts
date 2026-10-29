@@ -22,6 +22,7 @@ export interface PaymentAttempt {
   txid?: string
   feeSats?: number
   quotedFeeSats?: number | null
+  approvedMaxFeeSats?: number
   proof?: {
     derivationPrefix: string
     derivationSuffix: string
@@ -50,6 +51,9 @@ export async function preparePayment(
     throw new Error(
       'No fresh durable payment attempt; reconcile the existing payment',
     )
+  const feeLimit = attempt.approvedMaxFeeSats ?? config.provisional.maxPageFeeSats
+  if (!Number.isSafeInteger(feeLimit) || feeLimit < 0)
+    throw new Error('Invalid one-page fee approval')
   if (
     args.outputs?.length !== 1 ||
     args.outputs[0].satoshis !== config.priceSats
@@ -112,10 +116,10 @@ export async function preparePayment(
     const template = Transaction.fromAtomicBEEF(signable.tx)
     const fee = networkFee(template)
     quotedFeeSats = fee
-    if (fee == null || fee > config.provisional.maxPageFeeSats) {
+    if (fee == null || fee > feeLimit) {
       feeRejected = true
       throw new Error(
-        `Page miner fee ${fee ?? 'unknown'} exceeds the ${config.provisional.maxPageFeeSats}-sat limit. Lower the wallet fee rate before retrying.`,
+        `Page miner fee ${fee ?? 'unknown'} exceeds the ${feeLimit}-sat limit.`,
       )
     }
     if (

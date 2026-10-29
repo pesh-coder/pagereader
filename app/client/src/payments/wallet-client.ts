@@ -337,7 +337,7 @@ export async function openWallet(callbacks: {
         return null
       }
     },
-    beginPayment(edition: string, page: number, requestId: string) {
+    beginPayment(edition: string, page: number, requestId: string, approvedMaxFeeSats?: number) {
       activeAttemptKey = attemptKey(edition, page)
       const existing = journal.get()
       if (
@@ -354,6 +354,7 @@ export async function openWallet(callbacks: {
         page,
         requestId,
         state: 'reserved',
+        ...(approvedMaxFeeSats === undefined ? {} : { approvedMaxFeeSats }),
       })
     },
     async cancelUnsigned(edition: string, page: number) {

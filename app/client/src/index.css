@@ -925,6 +925,15 @@ dialog .panel-heading button {
   min-height: 44px;
   padding-block: 10px;
 }
+.page-fee-approval {
+  border-top: 1px solid var(--rule);
+  margin-top: 20px;
+  padding-top: 12px;
+}
+.page-fee-approval button {
+  max-width: 100%;
+  white-space: normal;
+}
 .sr-only {
   position: absolute;
   width: 1px;

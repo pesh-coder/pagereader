@@ -59,6 +59,7 @@ function fixture(t: TestContext) {
     failReconciliation = false,
     changeIntentOnRecheck = false;
   const ids: string[] = [];
+  const feeCaps: (number | undefined)[] = [];
   const open: typeof openWallet = async (callbacks) =>
     ({
       identityKey: "reader",
@@ -111,8 +112,9 @@ function fixture(t: TestContext) {
         attempt = { identityKey: "reader", edition: "edition", page: 3, requestId: id, state: "aborted", retryReason: "not-started" };
         return true;
       },
-      beginPayment: (_edition: string, _page: number, id: string) => {
+      beginPayment: (_edition: string, _page: number, id: string, cap?: number) => {
         ids.push(id);
+        feeCaps.push(cap);
         attempt = {
           identityKey: "reader",
           edition: "edition",
@@ -128,6 +130,7 @@ function fixture(t: TestContext) {
     gateway,
     values,
     ids,
+    feeCaps,
     counts: () => ({ creates, recoveries }),
     historyFailure: () => {
       failHistory = true;
@@ -156,6 +159,10 @@ function fixture(t: TestContext) {
     },
     savedFailure: () => {
       attempt!.lastFailure = { method: "createAction", code: "MOBILE_FAILURE" };
+    },
+    rejectedFee: (fee: number | null) => {
+      attempt!.retryReason = "fee-limit";
+      attempt!.quotedFeeSats = fee;
     },
     orphan: (fail = false, changed = false) => {
       attempt = undefined;
@@ -200,6 +207,47 @@ test("Check payment after cancellation offers an explicit retry without starting
     (error) => error instanceof ReaderError && error.action === "retry",
   );
   assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+});
+
+test("known cancelled fee quote offers a page-bound approval; invalid bindings cannot spend", async (t) => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.setAttempt("aborted");
+  f.rejectedFee(23);
+  let approval: NonNullable<ReaderError["feeApproval"]> | undefined;
+  await assert.rejects(f.gateway.page(book, 3, true), (error) => {
+    assert.ok(error instanceof ReaderError);
+    approval = error.feeApproval;
+    return true;
+  });
+  assert.deepEqual(approval, { identityKey: "reader", edition: "edition", page: 3, requestId, maxFeeSats: 23 });
+  for (const changed of [
+    { identityKey: "another" }, { edition: "another" }, { page: 4 },
+    { requestId: "another" }, { maxFeeSats: 24 }, { maxFeeSats: NaN },
+  ]) await assert.rejects(f.gateway.page(book, 3, false, { ...approval!, ...changed }), /fee quote changed/);
+  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+  await f.gateway.page(book, 3, false, approval);
+  assert.deepEqual(f.ids, [requestId]);
+  assert.deepEqual(f.feeCaps, [23]);
+  f.setAttempt("aborted");
+  f.rejectedFee(23);
+  await f.gateway.page(book, 3);
+  assert.deepEqual(f.feeCaps, [23, undefined]);
+});
+
+test("unknown fee or unresolved signing never offers a higher fee approval", async (t) => {
+  const f = fixture(t);
+  await f.gateway.library();
+  for (const state of ["aborted", "signing"] as const) {
+    f.setAttempt(state);
+    f.rejectedFee(state === "aborted" ? null : 23);
+    await assert.rejects(f.gateway.page(book, 3, true), (error) => {
+      assert.ok(error instanceof ReaderError);
+      assert.equal(error.feeApproval, undefined);
+      return true;
+    });
+  }
+  assert.equal(f.counts().creates, 0);
 });
 
 test("Check payment reports unresolved stages and saved wallet code without creating a replacement", async (t) => {

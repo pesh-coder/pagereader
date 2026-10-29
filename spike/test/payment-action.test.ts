@@ -139,8 +139,33 @@ test("57-sat fee is aborted before signing or broadcast", async () => {
   assert.equal(f.journal.get().quotedFeeSats, 57);
 });
 
+test("explicit one-attempt fee approval permits its maximum but refuses higher or unknown fees", async () => {
+  for (const fee of [1, 23]) {
+    const f = fixture(fee);
+    f.journal.save({ ...f.journal.get(), approvedMaxFeeSats: 23 });
+    await preparePayment(f.wallet, f.args, f.journal);
+    assert.equal(f.journal.get().state, "signed");
+    assert.equal(f.journal.get().feeSats, fee);
+    assert.equal(f.events.includes("broadcast"), false);
+  }
+  const f = fixture(24);
+  f.journal.save({ ...f.journal.get(), approvedMaxFeeSats: 23 });
+  await assert.rejects(preparePayment(f.wallet, f.args, f.journal), /24 exceeds the 23-sat limit/);
+  assert.equal(f.journal.get().state, "aborted");
+  assert.equal(f.journal.get().quotedFeeSats, 24);
+  assert.equal(f.events.includes("sign"), false);
+  assert.equal(f.events.includes("broadcast"), false);
+  for (const invalid of [NaN, Infinity, -1, 1.5]) {
+    const invalidCase = fixture();
+    invalidCase.journal.save({ ...invalidCase.journal.get(), approvedMaxFeeSats: invalid });
+    await assert.rejects(preparePayment(invalidCase.wallet, invalidCase.args, invalidCase.journal), /Invalid one-page/);
+    assert.equal(invalidCase.events.includes("prepare"), false);
+  }
+});
+
 test("unknown parent values cannot bypass the fee cap", async () => {
   const f = fixture();
+  f.journal.save({ ...f.journal.get(), approvedMaxFeeSats: 23 });
   f.tx.inputs[0].sourceTransaction = undefined;
   f.wallet.createAction = async () => ({
     signableTransaction: {

@@ -5,6 +5,7 @@ import {
   ReaderError,
   type Book,
   type ReaderPage,
+  type PageFeeApproval,
 } from './reader/gateway'
 import { spendingLabel, summarizeSpending } from './reader/spending'
 import { Panel } from './reader/components/Panel'
@@ -29,6 +30,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [paymentDetails, setPaymentDetails] = useState<string[]>([])
+  const [feeApproval, setFeeApproval] = useState<PageFeeApproval | null>(null)
   const [errorAction, setErrorAction] = useState<
     'connect' | 'retry' | 'check' | null
   >(null)
@@ -100,21 +102,23 @@ export default function App() {
       document.removeEventListener('visibilitychange', save)
     }
   }, [book, page, gateway])
-  async function turn(selected: Book, number: number, recoveryOnly = false) {
+  async function turn(selected: Book, number: number, recoveryOnly = false, approval?: PageFeeApproval) {
     if (lock.current) return
     lock.current = true
     setBusy(true)
     if (!recoveryOnly) {
       setError('')
       setPaymentDetails([])
+      setFeeApproval(null)
       setErrorAction(null)
     }
     setPanel(null)
     try {
-      const body = await gateway.page(selected, number, recoveryOnly)
+      const body = await gateway.page(selected, number, recoveryOnly, approval)
       setError('')
       setPaymentDetails([])
       setErrorAction(null)
+      setFeeApproval(null)
       setBook(selected)
       setPage(body)
       setFailedPage(null)
@@ -123,6 +127,7 @@ export default function App() {
         article.current?.focus({ preventScroll: true }),
       )
     } catch (failure) {
+      setFeeApproval(failure instanceof ReaderError ? failure.feeApproval ?? null : null)
       setPaymentDetails(
         failure instanceof ReaderError ? failure.details ?? [] : [],
       )
@@ -374,8 +379,22 @@ export default function App() {
             <button disabled={busy} onClick={() => request(failedPage)}>
               {failedPage <= config.freePages
                 ? 'Try again'
+                : feeApproval
+                  ? `Retry with ${config.provisional.maxPageFeeSats}-sat fee limit`
                 : 'Try purchase again'}
             </button>
+          )}
+          {feeApproval && book?.editionId === feeApproval.edition && failedPage === feeApproval.page && (
+            <div className="page-fee-approval">
+              <p>
+                Page {feeApproval.page}: {config.priceSats} sats + up to {feeApproval.maxFeeSats} sats miner fee.
+                Maximum total: <strong>{config.priceSats + feeApproval.maxFeeSats} sats</strong>.
+                {' '}This approval covers this page attempt only. Wallet permission setup costs are separate.
+              </p>
+              <button disabled={busy} onClick={() => void turn(book, feeApproval.page, false, feeApproval)}>
+                Approve up to {config.priceSats + feeApproval.maxFeeSats} sats for this page
+              </button>
+            </div>
           )}
           {errorAction === 'check' && book && failedPage !== null && (
             <button
