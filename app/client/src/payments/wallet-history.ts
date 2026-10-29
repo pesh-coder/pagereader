@@ -87,14 +87,17 @@ export async function verifyIncomingOnlyHistory(
   wallet: Pick<WalletInterface, 'listActions'>,
 ): Promise<void> {
   const actions = await readHistory(wallet, true)
+  const incoming = actions.filter((action) => !action.isOutgoing && action.satoshis >= 0)
+  const outgoing = actions.filter((action) => action.isOutgoing || action.satoshis < 0)
+  // internalizeAction records incoming funds as unproven until a BUMP exists.
+  // This is not an unsigned/outgoing payment and must not block reconciliation.
+  const unsupported = incoming.filter((action) => !['completed', 'unproven'].includes(action.status))
   if (
     actions.length === 0 ||
     !actions.some((action) => action.satoshis > 0) ||
-    actions.some((action) =>
-      action.isOutgoing || action.satoshis < 0 || action.status !== 'completed',
-    )
+    outgoing.length > 0 || unsupported.length > 0
   )
     throw new Error(
-      'The wallet history could not confirm a received-funds-only wallet. The original payment remains blocked; no new payment was created.',
+      `The wallet history could not confirm a received-funds-only wallet. History: ${actions.length} records, ${incoming.length} received, ${outgoing.length} outgoing, ${unsupported.length} received with an unsupported status. The original payment remains blocked; no new payment was created.`,
     )
 }

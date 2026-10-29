@@ -19,13 +19,16 @@ test('orphan challenge reconciliation requires complete received-only history, n
     },
   }) as unknown as HistoryWallet
   await verifyIncomingOnlyHistory(wallet([incoming]))
+  await verifyIncomingOnlyHistory(wallet([{ ...incoming, status: 'unproven' }]))
   for (const actions of [
     [], [incoming, action(2)],
     [incoming, { ...action(2, 0), isOutgoing: true }],
-    ...['unsigned', 'nosend', 'sending', 'unproven', 'failed'].map(status => [{ ...incoming, status }]),
+    [incoming, { ...action(2), status: 'unproven' }],
+    ...['unsigned', 'nosend', 'sending', 'unprocessed', 'nonfinal', 'failed'].map(status => [{ ...incoming, status }]),
   ]) await assert.rejects(verifyIncomingOnlyHistory(wallet(actions)), /received-funds-only/)
   await assert.rejects(verifyIncomingOnlyHistory(wallet([incoming], 2)), /incomplete/)
   await assert.rejects(verifyIncomingOnlyHistory(wallet([incoming, incoming])), /inconsistent/)
+  await assert.rejects(verifyIncomingOnlyHistory(wallet([])), /History: 0 records, 0 received, 0 outgoing/)
 })
 
 test('cost history reads all originator buckets without seeking permissions and rejects incomplete snapshots', async () => {

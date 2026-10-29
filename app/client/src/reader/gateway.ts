@@ -441,7 +441,7 @@ export function createReaderGateway(
                 attempt?.retryReason === 'insufficient-funds'
                   ? 'Your wallet needs more funds. Your current page is still available.'
                   : attempt?.retryReason === 'not-started'
-                    ? 'Payment checked: the wallet history contains only received funds, with no outgoing or pending transaction. Try purchase again to use the original request. This check did not make a payment.'
+                    ? 'Payment checked: the wallet history contains only received funds, with no outgoing transaction. Try purchase again to use the original request. This check did not make a payment.'
                   : 'Payment cancelled. Your current page is still available.',
                 'retry',
               )
