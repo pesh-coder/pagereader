@@ -1,2 +1,5 @@
 # Linux deployment shells must not receive Windows CRLF line endings.
 *.sh text eol=lf
+# Gutenberg sources are immutable byte assets: their hashes identify paid editions.
+spike/data/gutenberg-*.txt -text whitespace=-blank-at-eol,cr-at-eol
+spike/data/sources/*.txt -text whitespace=-blank-at-eol,cr-at-eol
