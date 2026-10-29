@@ -2,7 +2,9 @@
 
 Updated 2026-10-29. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. The original acceptance targets are retained, including where the observed wallet behavior conflicts with them.
 
-The [senior review R1 checklist](review-feedback-r1.md) records the local reader, recovery, source-byte and production-route changes. These have not been deployed or verified with the real wallets. Removing repeated app confirmations does not satisfy native one-prompt acceptance. Tests of receiver merges simulate the receiving wallet; native duplicate-import behavior still needs verification.
+The [senior review R1 checklist](review-feedback-r1.md) records the reader, recovery, source-byte and production-route changes. Hosted feature checks now show the review features, but full real-wallet verification remains open. Removing repeated app confirmations does not satisfy native one-prompt acceptance. Tests of receiver merges simulate the receiving wallet; native duplicate-import behavior still needs verification.
+
+**Hosted/device checkpoint, 2026-10-29:** the delivered reader includes the review features, production research routes return 404, and all 16 public preview pages pass from the agent environment. Health reports mainnet, payment-ready and purchases enabled. The user reports Desktop 3.3.1 and Browser 1.6.3 with different identities; independent wallet testing can proceed, while same-identity resume remains unverified. The phone screenshot exposed bottom navigation covered by browser/system bars. A responsive layout fix passes local portrait/landscape checks; physical-phone retest remains open. See [hosted readiness and device checks](../spike/evidence/hosted-readiness-2026-10-29.md). None of the full acceptance statuses below are upgraded.
 
 ## The brief's “Done when” checklist
 
