@@ -995,3 +995,18 @@ dialog .panel-heading button {
     max-height: 55dvh;
   }
 }
+@media (max-width: 700px), (max-height: 500px) {
+  .reader-layout {
+    padding-bottom: 24px;
+  }
+  .pager {
+    /* Embedded browsers can overlay their toolbar without reporting a safe-area
+       inset. Keep navigation in the document so it can scroll clear of it. */
+    position: static;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    width: 100%;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+}
