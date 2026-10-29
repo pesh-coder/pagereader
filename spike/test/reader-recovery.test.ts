@@ -55,7 +55,9 @@ function fixture(t: TestContext) {
   } | null = null;
   let creates = 0,
     recoveries = 0,
-    failHistory = false;
+    failHistory = false,
+    failReconciliation = false,
+    changeIntentOnRecheck = false;
   const ids: string[] = [];
   const open: typeof openWallet = async (callbacks) =>
     ({
@@ -100,6 +102,15 @@ function fixture(t: TestContext) {
         },
       },
       getAttempt: () => attempt,
+      reconcileUnpaidChallenge: async (_edition: string, _page: number, id: string, recheck: () => Promise<boolean>) => {
+        assert.equal(callbacks.canSpend(), false);
+        if (failReconciliation) throw new Error("Wallet history could not confirm a received-funds-only wallet");
+        if (changeIntentOnRecheck) serverIntent = { request_id: "changed", state: "submitted", txid: "other-transaction" };
+        if (!(await recheck())) return false;
+        assert.equal(attempt, undefined);
+        attempt = { identityKey: "reader", edition: "edition", page: 3, requestId: id, state: "aborted", retryReason: "not-started" };
+        return true;
+      },
       beginPayment: (_edition: string, _page: number, id: string) => {
         ids.push(id);
         attempt = {
@@ -145,6 +156,12 @@ function fixture(t: TestContext) {
     },
     savedFailure: () => {
       attempt!.lastFailure = { method: "createAction", code: "MOBILE_FAILURE" };
+    },
+    orphan: (fail = false, changed = false) => {
+      attempt = undefined;
+      serverIntent = { request_id: requestId, state: "challenged", txid: null };
+      failReconciliation = fail;
+      changeIntentOnRecheck = changed;
     },
   };
 }
@@ -199,6 +216,34 @@ test("Check payment reports unresolved stages and saved wallet code without crea
     assert.ok(error.details?.some((line) => line.includes("createAction") && line.includes("MOBILE_FAILURE")));
     return true;
   });
+  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+  assert.deepEqual(f.ids, []);
+});
+
+test("orphan challenge recovery checks without paying, then explicit retry uses the original request", async (t) => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.orphan();
+  await assert.rejects(f.gateway.page(book, 3, true), (error) => {
+    assert.ok(error instanceof ReaderError);
+    assert.equal(error.action, "retry");
+    assert.match(error.message, /wallet history contains only received funds/);
+    return true;
+  });
+  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
+  assert.deepEqual(f.ids, []);
+  await f.gateway.page(book, 3);
+  assert.deepEqual(f.ids, [requestId]);
+  assert.equal(f.counts().creates, 1);
+});
+
+test("history refusal or a changed server intent keeps an orphan blocked without paying", async (t) => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.orphan(true);
+  await assert.rejects(f.gateway.page(book, 3, true), /received-funds-only/);
+  f.orphan(false, true);
+  await assert.rejects(f.gateway.page(book, 3, true), /still unresolved/);
   assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
   assert.deepEqual(f.ids, []);
 });

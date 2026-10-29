@@ -1,13 +1,32 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { WalletInterface } from '@bsv/sdk'
-import { readActionCosts } from '../src/wallet-history.js'
+import { readActionCosts, verifyIncomingOnlyHistory } from '../src/wallet-history.js'
 import { summarizeSpending } from '../../app/client/src/reader/spending.js'
 import { createReaderGateway, type Book } from '../../app/client/src/reader/gateway.js'
 
 const txid = (n: number) => n.toString(16).padStart(64, '0')
 const action = (n: number, satoshis = -6) => ({ txid: txid(n), satoshis, isOutgoing: satoshis < 0, status: 'completed' })
 type HistoryWallet = Pick<WalletInterface, 'listActions'>
+
+test('orphan challenge reconciliation requires complete received-only history, never an outgoing or uncertain action', async () => {
+  const incoming = action(1, 1000)
+  const wallet = (actions: unknown[], totalActions = actions.length) => ({
+    listActions: async (args: { labels: string[]; seekPermission: boolean }) => {
+      assert.deepEqual(args.labels, [])
+      assert.equal(args.seekPermission, true)
+      return { totalActions, actions }
+    },
+  }) as unknown as HistoryWallet
+  await verifyIncomingOnlyHistory(wallet([incoming]))
+  for (const actions of [
+    [], [incoming, action(2)],
+    [incoming, { ...action(2, 0), isOutgoing: true }],
+    ...['unsigned', 'nosend', 'sending', 'unproven', 'failed'].map(status => [{ ...incoming, status }]),
+  ]) await assert.rejects(verifyIncomingOnlyHistory(wallet(actions)), /received-funds-only/)
+  await assert.rejects(verifyIncomingOnlyHistory(wallet([incoming], 2)), /incomplete/)
+  await assert.rejects(verifyIncomingOnlyHistory(wallet([incoming, incoming])), /inconsistent/)
+})
 
 test('cost history reads all originator buckets without seeking permissions and rejects incomplete snapshots', async () => {
   const calls: unknown[] = []

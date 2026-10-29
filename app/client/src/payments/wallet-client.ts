@@ -8,7 +8,7 @@ import {
   broadcastPayment,
   type PaymentAttempt,
 } from './payment-action.js'
-import { readActionCosts } from './wallet-history.js'
+import { readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
 
 export interface WalletCall {
   method: string
@@ -108,6 +108,7 @@ export async function openWallet(callbacks: {
       localStorage.setItem(activeAttemptKey, JSON.stringify(attempt))
     },
   }
+  const lockName = `pagestream-payment:${identityKey}`
   const paymentWallet = new Proxy(wallet, {
     get(target, property) {
       const value = Reflect.get(target, property)
@@ -178,62 +179,69 @@ export async function openWallet(callbacks: {
         const started = performance.now()
         let ok = false
         let failure: WalletCall['error']
-        try {
-          const result =
-            property === 'createAction'
-              ? await preparePayment(
-                  paymentWallet,
-                  args[0] as Parameters<WalletInterface['createAction']>[0],
-                  journal,
-                  args[1] as string | undefined,
-                )
-              : await value.apply(target, args)
-          if (property === 'createAction') {
-            const txid =
-              result.txid ??
-              (result.tx
-                ? Transaction.fromAtomicBEEF(result.tx).id('hex')
-                : undefined)
-            if (!txid)
-              throw new Error(
-                'Wallet returned no payment txid; reconcile before continuing',
-              )
-            const action = args[0] as Parameters<
-              WalletInterface['createAction']
-            >[0]
-            const feeSats = result.tx
-              ? networkFee(Transaction.fromAtomicBEEF(result.tx))
-              : null
-            callbacks.spend({
-              txid,
-              identityKey,
-              page: callbacks.currentPage(),
-              sats: action.outputs?.[0]?.satoshis ?? 0,
-              feeSats,
-              state: 'pending',
-            })
-            await broadcastPayment(
-              paymentWallet,
-              journal.get()!,
-              args[1] as string | undefined,
-            )
-          }
-          ok = true
-          return result
-        } catch (error) {
-          failure = walletError(error)
-          throw error
-        } finally {
-          callbacks.call({
-            method:
+        const execute = async () => {
+          try {
+            if (property === 'createAction' && !callbacks.canSpend())
+              throw new Error('The purchase is no longer active; no payment was created')
+            const result =
               property === 'createAction'
-                ? 'page payment workflow'
-                : String(property),
-            ms: performance.now() - started,
-            ok,
-            ...(failure ? { error: failure } : {}),
-          })
+                ? await preparePayment(
+                    paymentWallet,
+                    args[0] as Parameters<WalletInterface['createAction']>[0],
+                    journal,
+                    args[1] as string | undefined,
+                  )
+                : await value.apply(target, args)
+            if (property === 'createAction') {
+              const txid =
+                result.txid ??
+                (result.tx
+                  ? Transaction.fromAtomicBEEF(result.tx).id('hex')
+                  : undefined)
+              if (!txid)
+                throw new Error(
+                  'Wallet returned no payment txid; reconcile before continuing',
+                )
+              const action = args[0] as Parameters<
+                WalletInterface['createAction']
+              >[0]
+              const feeSats = result.tx
+                ? networkFee(Transaction.fromAtomicBEEF(result.tx))
+                : null
+              callbacks.spend({
+                txid,
+                identityKey,
+                page: callbacks.currentPage(),
+                sats: action.outputs?.[0]?.satoshis ?? 0,
+                feeSats,
+                state: 'pending',
+              })
+              await broadcastPayment(
+                paymentWallet,
+                journal.get()!,
+                args[1] as string | undefined,
+              )
+            }
+            ok = true
+            return result
+          } catch (error) {
+            failure = walletError(error)
+            throw error
+          } finally {
+            callbacks.call({
+              method:
+                property === 'createAction'
+                  ? 'page payment workflow'
+                  : String(property),
+              ms: performance.now() - started,
+              ok,
+              ...(failure ? { error: failure } : {}),
+            })
+          }
         }
+        return property === 'createAction' && navigator.locks
+          ? navigator.locks.request(lockName, execute)
+          : execute()
       }
     },
   })
@@ -286,6 +294,30 @@ export async function openWallet(callbacks: {
     version: version.version,
     network: 'mainnet' as const,
     readActionCosts: () => readActionCosts(paymentWallet),
+    async reconcileUnpaidChallenge(
+      edition: string,
+      page: number,
+      requestId: string,
+      recheck: () => Promise<boolean>,
+    ) {
+      if (!navigator.locks)
+        throw new Error(
+          'This browser cannot safely coordinate payment recovery across tabs. The original request was kept.',
+        )
+      return navigator.locks.request(lockName, async () => {
+        if (getAttempt(edition, page)) return false
+        await verifyIncomingOnlyHistory(paymentWallet)
+        if (!(await recheck()) || getAttempt(edition, page)) return false
+        localStorage.setItem(
+          attemptKey(edition, page),
+          JSON.stringify({
+            identityKey, edition, page, requestId,
+            state: 'aborted', retryReason: 'not-started',
+          } satisfies PaymentAttempt),
+        )
+        return true
+      })
+    },
     paymentFee(edition: string, page: number, txid: string): number | null {
       try {
         const attempt = getAttempt(edition, page)

@@ -395,7 +395,20 @@ export function createReaderGateway(
         let body: ReaderPage
         if (status.purchase) body = await readOnly(api(`owned/${page}`))
         else {
-          const attempt = wallet!.getAttempt(edition, page)
+          let attempt = wallet!.getAttempt(edition, page)
+          if (
+            recoveryOnly && !attempt && status.intent?.state === 'challenged' &&
+            !status.intent.txid
+          ) {
+            const requestId = status.intent.request_id
+            await wallet!.reconcileUnpaidChallenge(edition, page, requestId, async () => {
+              const current = await readOnly<Status>(api(`status/${page}`))
+              checkedStatus = current
+              return !current.purchase && current.intent?.request_id === requestId &&
+                current.intent.state === 'challenged' && !current.intent.txid
+            })
+            attempt = wallet!.getAttempt(edition, page)
+          }
           if (attempt?.proof)
             body = await paidResponse(
               await wallet!.recoverPayment(edition, page, true),
@@ -427,6 +440,8 @@ export function createReaderGateway(
               throw new ReaderError(
                 attempt?.retryReason === 'insufficient-funds'
                   ? 'Your wallet needs more funds. Your current page is still available.'
+                  : attempt?.retryReason === 'not-started'
+                    ? 'Payment checked: the wallet history contains only received funds, with no outgoing or pending transaction. Try purchase again to use the original request. This check did not make a payment.'
                   : 'Payment cancelled. Your current page is still available.',
                 'retry',
               )
