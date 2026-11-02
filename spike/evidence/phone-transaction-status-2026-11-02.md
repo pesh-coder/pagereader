@@ -58,6 +58,12 @@ Read-only inspector: `node --import tsx scripts/inspect-payment.ts <existing.sql
 
 Any fee bump would change or add a financial transaction and requires a supported wallet/miner recovery method and an explicit cost before execution. Replacing the page purchase, resetting the wallet or marking its inputs reusable is not a repair. A maintainer handoff with the exact funding dependencies is prepared in [the recovery report](../../docs/phone-payment-recovery-report.md).
 
+## Maintainer explanation and restored setting
+
+The user subsequently supplied the maintainer's confirmation: the Browser payments pay approximately 100 sats/kB, but spend the two Desktop funding transfers that paid 1 sat each (approximately 4 sats/kB). Arcade accepts the lower rate while miners currently taking approximately 100 sats/kB have not mined the Desktop parents, holding up the dependent Browser transactions. This is the maintainer's explanation, supplementing the direct processor records above; the private conversation was not published upstream.
+
+Desktop's original configured rate of 1 sat/kB rounded to an absolute 1-sat fee on each 226-byte transfer. Browser retained its own approximately 100-sat/kB rate; it inherited the unconfirmed input dependency, not Desktop's rate. The user now reports that restoring Desktop reset the setting to 250 sats/kB. Advised setting the custom rate back to **100 sats/kB**, saving and restarting BSV Desktop, then verifying it persists. This rate change is not yet confirmed and cannot alter the original signed transfers. The earlier low-fee recommendation confused processor acceptance with reliable mining and should not be repeated as the POC's working configuration.
+
 ## Acceptance impact
 
 The baseline recorded-spend comparison is complete for the supplied Desktop and Browser records, and phone owned-page resume preserves its recorded total. Broader payment reliability and settlement are not complete. Prioritize this under native payment correctness before another paid timing cohort. Session approval, paid latency, same-identity cross-device resume, native failure/race/stopping tests and the final demo/sharing remain open.
