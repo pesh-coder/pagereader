@@ -4,7 +4,7 @@ Updated 2026-11-02. Seller price remains 5 sats; miner fees are additional. Orig
 
 | Order | Remaining work | Evidence needed to finish |
 |---|---|---|
-| 1 | Verify owned pages and actual spending on both wallets | Reopen an already-owned page without another debit; match its reader receipt, wallet debit and fee; identify permission costs separately. Phone page 3 is reported owned with 28 sats shown; reconcile rather than assume its native debit. |
+| 1 | Recorded spending comparison: complete for supplied records | Desktop matched 3 payments totaling 74 sats. Phone wallet shows one 28-sat page debit matching the reader, plus a separate 199-sat permission grant. Phone owned-page resume retains the same total. Mining/proof status is a separate follow-up, still open. |
 | 2 | Resolve one native approval per session | Establish a supported wallet session budget, correct price-plus-fee allowance consumption and silent subsequent purchases. Current monthly grant and per-page app fee exceptions do not pass. No wallet modification or app/server substitute for the wallet limit. |
 | 3 | Diagnose and improve paid-turn latency | Fresh stage timings, a demonstrated improvement, then 20 distinct new paid turns per wallet with p95 <=500 ms. Include cold/slow/failed attempts. |
 | 4 | Finish phone/cross-device story | Final wallet-disconnected preview test; supported same-identity resume on the other device, correct bookmark and no duplicate payment. Current Desktop/Browser identities differ. |
@@ -13,7 +13,13 @@ Updated 2026-11-02. Seller price remains 5 sats; miner fees are additional. Orig
 
 ## First device run: owned-page verification
 
-The user is setting Desktop's custom rate to 100 sats/kB and restarting it. This is not yet confirmed complete. A rate change applies to future transactions; it does not reprice older receipts.
+The user confirms BSV Desktop has restarted after the fee-setting step. Desktop's reader shows page 3 at 62 sats, page 5 at 6 sats and page 6 at 6 sats: 15 sats in page prices plus 59 sats in fees, totaling 74. The supplied result explicitly says **Wallet totals checked for 3 payments**, confirming the current Desktop wallet-cost match. Individual mining statuses and a fresh Desktop reopen/no-new-debit observation were not supplied. The configured rate has not been independently read back. A rate change applies to future transactions; it does not reprice older receipts.
+
+The phone's supplied panel shows accepted page 3 at 5 sats plus a 23-sat fee, totaling 28 sats. The user confirms reopening resumes with that same total. Subsequent native wallet screenshots now independently show a 28-sat Pagestream debit and a separate 199-sat **Grant 4 permissions** debit. Wallet activity shows incoming amounts of 1,000 and 6,000 sats and a balance of 6,773 sats: 7,000 - 28 - 199 = 6,773. This closes the baseline recorded-spend comparison, replacing the earlier missing phone-history result with direct wallet evidence. No second page-payment debit is shown in the supplied history. The entire wallet's historical completeness and all future payment/failure/race cases are not established by these screenshots.
+
+Both outgoing detail screens are dated 29 October 2026 and display `unproven` / **Waiting for a block**. This is the wallet's reported proof state, not independent evidence that the transactions are still unmined. Public blockchain checks are pending full transaction IDs; screenshot prefixes/suffixes are insufficient. Requested the full IDs for the 28-sat page payment and 199-sat grant. No new purchase, replacement payment, rebroadcast or wallet reset is needed for this check. The user requests an updated remaining-items list after each completed item.
+
+The IDs were subsequently supplied: WhatsOnChain and BananaBlocks both return 404 for each, with successful mainnet tip/genesis controls. See [transaction-status evidence](../spike/evidence/phone-transaction-status-2026-11-02.md). Recorded-spend comparison is closed; transaction settlement/propagation is now an active payment-correctness investigation, not a reason to buy again.
 
 1. On Desktop/Chrome, open the hosted reader, connect the existing wallet if needed and use **Continue reading** to open an owned page. Record book/page and the displayed book total. Do not select an unowned page or approve a new spending grant just to inspect history.
 2. Compare the existing page receipt with the wallet Activity entry: page price, miner fee, total debit and transaction status. Do not send keys, recovery words or full wallet exports. Matching public txid/status and amounts is enough.
