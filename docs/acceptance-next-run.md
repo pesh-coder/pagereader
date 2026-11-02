@@ -2,6 +2,8 @@
 
 Updated 2026-11-02. Seller price remains 5 sats; miner fees are additional. Original session approval and 500-ms targets remain unchanged. No new page payment was made during this investigation.
 
+**Current blocker investigated:** both phone debits spend unconfirmed Desktop funding transfers that each paid a 1-sat fee. The actual processor reports `SEEN_MULTIPLE_NODES`; original page broadcast history was recovered. This is a mining/dependency issue, not evidence of an unsent page payment. The broadcast-result handling gap is fixed and tested, while a supported recovery for the original funding chains remains open. [Findings and exact dependencies](../spike/evidence/phone-transaction-status-2026-11-02.md), [prepared maintainer report](phone-payment-recovery-report.md).
+
 | Order | Remaining work | Evidence needed to finish |
 |---|---|---|
 | 1 | Recorded spending comparison: complete for supplied records | Desktop matched 3 payments totaling 74 sats. Phone wallet shows one 28-sat page debit matching the reader, plus a separate 199-sat permission grant. Phone owned-page resume retains the same total. Mining/proof status is a separate follow-up, still open. |

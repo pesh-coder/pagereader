@@ -67,6 +67,8 @@ Wallet acceptance and SQLite commit are separate operations. Recovery now checks
 
 The counter includes recorded page prices and fees once per transaction; unknown fees are marked. Confirmed fees persist server-side so another browser can recover the same total. Permission setup is excluded and identified separately. Complete cross-device accounting remains unverified. “5 sats per page” alone is not an accurate total-debit claim.
 
+The phone's actual page debit is **28 sats**, plus a separate **199-sat permission grant**. Both depend on unconfirmed Desktop funding transfers that paid 1-sat fees. The broadcast processor reports them as seen by multiple nodes, but has no mining proof; changing today's fee setting cannot change those original transfers. Recovery remains open. The client now checks and saves each original transaction's broadcast result instead of ignoring failed or missing results. [Investigation](spike/evidence/phone-transaction-status-2026-11-02.md).
+
 **Why this differs from the brief:** official BRC-105 middleware coordinates the challenge/retry instead of a hand-written payment endpoint. It still uses `createAction` and Atomic BEEF. We do not combine it with the scaffold's separate signed-proof recipe. We avoid paid prefetch so readers pay only for pages they explicitly request.
 
 Speed remains unresolved: one paid sample took **9.01 s for paid HTTP** and **47.33 s request to frame marker**, including **1.41 s broadcast**. No paid p95 exists; the under-500-ms target needs investigation and measurements. Closing the tab starts no further purchases, but cannot undo a submitted payment. Leaving mid-chapter still needs a live check.

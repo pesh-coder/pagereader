@@ -31,6 +31,33 @@ Requested the options in the native payment-detail three-dot menu to obtain the 
 
 Code review also found that the client forwards `sendWith` broadcast results without explicitly interpreting individual result statuses. This is a diagnostic/correctness review item, not an established explanation of these two records. The server's `accepted` receipt represents receiving-wallet acceptance; it is not independent proof of mining.
 
+## Original proof and processor history recovered
+
+At approximately 07:53–07:58 UTC, the existing receiving wallet's read-only `listOutputs` returned the original page transaction and its embedded ancestors. Its identity was first compared with the hosted manifest and matched. No phone export, private-key transfer, new transaction or manual rebroadcast was needed. Original proof bytes and raw provider history remain in ignored `evidence/runs/`; they are not committed.
+
+The 226-byte page transaction's original fee is **23 sats**, and its payment plus parent scripts verify with the SDK. It spends output 0 of the **1,000-sat Desktop funding transfer** below. The separate grant's extended-format transaction was retrieved through the actual broadcast processor and its TXID checked before calculating its fee.
+
+| Transaction | Input dependency | Original fee | Arcade status |
+|---|---|---|---|
+| Page `06b3820e…2f74938` | Funding `da9e4cf1…bec6799`, output 0 | 23 sats / 226 bytes | `SEEN_MULTIPLE_NODES` |
+| 1,000-sat funding `da9e4cf1ebefc26d5df25566f352cdc62bee0fa20b1904f7db4ae8b55bec6799` | Confirmed `bfadf011df9520bd96365b819ebd15b04b853de36f54a2cbfe6a6c9ea0f64814`, output 1 | **1 sat / 226 bytes** | `SEEN_MULTIPLE_NODES` |
+| Grant `6cdc5bb0…33027ab` | Funding `8047e344…0e56b6`, output 0 | 195 sats / 1,946 bytes; 4 additional sats in permission outputs make the 199-sat debit | `SEEN_MULTIPLE_NODES` |
+| 6,000-sat funding `8047e344f66bd367eda864d1328f535ac0e961fa58e654e417f8a047a60e56b6` | `f78f5c629a375c0ac4c81a0b9e8a37e9fe8a4422efb5c8d070cdcdae5f598d6c`, output 3 | **1 sat / 226 bytes** | `SEEN_MULTIPLE_NODES` |
+
+The receiver's stored processing history explicitly records initial page broadcast success at **2026-10-29T16:39:45Z**, followed by `SEEN_MULTIPLE_NODES` on later automatic retries. Its status remains `unmined`, `wasBroadcast:true`. A proof check on 2 November still reports no mining proof. Those are existing provider records; this investigation did not initiate their retries.
+
+Direct GETs to the actual processor, `https://arcade-v2-us-1.bsvblockchain.tech/tx/<txid>`, return HTTP 200 and `SEEN_MULTIPLE_NODES` for all four transactions. Thus the earlier explorer/other-processor 404s **did not mean the original payments were never broadcast**. Both phone debits depend on existing, unconfirmed, 1-sat-fee Desktop funding. Neither dependency can be fixed by changing the fee setting for future transactions. The exact reason they have not been mined remains a miner/provider question; low fees alone are not a proven rejection reason. Arcade's current `/policy` advertises 1 sat/1,000 bytes, and the records do not report a fee rejection.
+
+WhatsOnChain reports the confirmed funding ancestor `bfadf011…` as mined and its output 1 as having no indexed spender (spent lookup 404); it does not know `da9e4cf1…` output 0 (400). This is another difference between processor and explorer views, not independent proof of a double spend.
+
+## Implemented correction and recovery boundary
+
+The client now matches `sendWithResults` to the original TXID, saves `unproven`/`sending`/`failed`/`unknown` with a timestamp, and refuses to continue a fresh paid delivery on failed, pending, missing, mismatched or duplicate results. Recovery no longer swallows that failure. It retains the exact signed proof/request/TXID and cannot create a replacement. `unproven` remains wallet broadcast acknowledgment, never a mining claim. This closes a real reporting/handling gap, **not the outstanding mining dependencies**.
+
+Read-only inspector: `node --import tsx scripts/inspect-payment.ts <existing.sqlite> <txid>`, or `--proof <saved-proof.json> <txid>`. It traces embedded parents, checks fees/TXID consistency and reads both explorers plus Arcade. It prints no raw transaction, remittance or key material. Tested against an older, confirmed Desktop receipt and the recovered phone proof.
+
+Any fee bump would change or add a financial transaction and requires a supported wallet/miner recovery method and an explicit cost before execution. Replacing the page purchase, resetting the wallet or marking its inputs reusable is not a repair. A maintainer handoff with the exact funding dependencies is prepared in [the recovery report](../../docs/phone-payment-recovery-report.md).
+
 ## Acceptance impact
 
 The baseline recorded-spend comparison is complete for the supplied Desktop and Browser records, and phone owned-page resume preserves its recorded total. Broader payment reliability and settlement are not complete. Prioritize this under native payment correctness before another paid timing cohort. Session approval, paid latency, same-identity cross-device resume, native failure/race/stopping tests and the final demo/sharing remain open.
