@@ -12,6 +12,7 @@ import {
   broadcastPayment,
   type PaymentAttempt,
 } from "../src/payment-action.js";
+import { paymentGraph } from '../scripts/inspect-payment.js';
 
 function fixture(fee = 1) {
   const key = PrivateKey.fromRandom();
@@ -75,7 +76,7 @@ function fixture(fee = 1) {
         assert.ok(attempt.proof);
         assert.deepEqual(input.options.sendWith, [attempt.txid]);
         assert.equal(input.outputs, undefined);
-        return {};
+        return { sendWithResults: [{ txid: attempt.txid, status: 'unproven' }] };
       }
       events.push("prepare");
       assert.equal(input.options?.signAndProcess, false);
@@ -121,6 +122,48 @@ test("signed proof is saved before broadcast; recovery only rebroadcasts the sam
     () => preparePayment(f.wallet, f.args, f.journal),
     /reconcile/,
   );
+});
+
+test('broadcast results are matched to the original TXID and retained without creating a replacement', async () => {
+  for (const status of ['unproven', 'sending', 'failed', 'unknown', 'missing', 'wrong-txid', 'duplicate', 'throws']) {
+    const f = fixture();
+    await preparePayment(f.wallet, f.args, f.journal);
+    const original = structuredClone(f.journal.get());
+    let sends = 0;
+    f.wallet.createAction = async input => {
+      sends++;
+      assert.deepEqual(input.options?.sendWith, [original.txid]);
+      assert.equal(input.outputs, undefined);
+      if (status === 'throws') throw Object.assign(new Error('processor refused'), {
+        sendWithResults: [{ txid: original.txid, status: 'failed' }],
+      });
+      if (status === 'missing') return {};
+      const item = { txid: status === 'wrong-txid' ? 'other' : original.txid!, status: status === 'duplicate' ? 'unproven' : status };
+      return { sendWithResults: (status === 'duplicate' ? [item, item] : [item]) as never };
+    };
+    const call = broadcastPayment(f.wallet, original, undefined, f.journal);
+    if (status === 'unproven') await call;
+    else await assert.rejects(call, /broadcast status|processor refused/);
+    const after = f.journal.get();
+    assert.equal(sends, 1);
+    assert.equal(after.state, 'signed');
+    assert.deepEqual(after.proof, original.proof);
+    assert.equal(after.requestId, original.requestId);
+    assert.equal(after.txid, original.txid);
+    assert.equal(after.broadcast?.status, status === 'throws' ? 'failed' :
+      ['unproven', 'sending', 'failed'].includes(status) ? status : 'unknown');
+    await assert.rejects(preparePayment(f.wallet, f.args, f.journal), /reconcile/);
+  }
+});
+
+test('read-only proof inspection identifies original parents and fees and rejects a changed TXID', () => {
+  const f = fixture(23);
+  const graph = paymentGraph(f.tx, f.tx.id('hex'));
+  assert.equal(graph.length, 2);
+  assert.equal(graph[0].feeSats, 23);
+  assert.equal(graph[0].inputs[0].txid, graph[1].txid);
+  assert.equal(graph[0].inputs[0].embedded, true);
+  assert.throws(() => paymentGraph(f.tx, '0'.repeat(64)), /TXID mismatch/);
 });
 
 test("57-sat fee is aborted before signing or broadcast", async () => {

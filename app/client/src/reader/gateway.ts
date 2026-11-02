@@ -510,16 +510,20 @@ export function createReaderGateway(
       } catch (error) {
         const attempt = wallet?.getAttempt(edition, page)
         const failure = attempt?.lastFailure ?? lastWalletFailure
+        // Wallet callbacks update this during awaited requests; TypeScript does
+        // not model those callback side effects after the reset above.
+        const http = lastHttp as { path: string; status: number } | undefined
         const details = [
           `Page ${page}; wallet stage: ${attempt?.state ?? 'no local attempt'}.`,
           `Server payment stage: ${checkedStatus?.intent?.state ?? (checkedStatus ? 'no intent' : 'status unavailable')}.`,
+          ...(attempt?.broadcast ? [`Wallet broadcast result: ${attempt.broadcast.status} (${attempt.broadcast.checkedAt}). This is not a mining confirmation.`] : []),
           ...(attempt?.retryReason === 'fee-limit'
             ? [`Wallet miner-fee quote: ${attempt.quotedFeeSats == null ? 'unknown (not enough transaction data)' : `${attempt.quotedFeeSats} sats`}; attempt fee limit: ${attempt.approvedMaxFeeSats ?? config.provisional.maxPageFeeSats} sats.`]
             : []),
           ...(failure
             ? [`Wallet call: ${failure.method}; error code: ${failure.code ?? 'not supplied'}.`]
             : ['No wallet failure code was saved for this attempt.']),
-          ...(lastHttp ? [`Last HTTP result: ${lastHttp.status} (${lastHttp.path}).`] : []),
+          ...(http ? [`Last HTTP result: ${http.status} (${http.path}).`] : []),
         ]
         const reported = (message: string, action: 'connect' | 'retry' | 'check') => {
           const result = new ReaderError(message, action)

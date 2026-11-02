@@ -18,6 +18,7 @@ export interface PaymentAttempt {
   retryReason?: 'cancelled' | 'insufficient-funds' | 'fee-limit' | 'not-started'
   walletRequestStarted?: boolean
   lastFailure?: { method: string; code?: number | string }
+  broadcast?: { status: 'unproven' | 'sending' | 'failed' | 'unknown'; checkedAt: string }
   reference?: string
   txid?: string
   feeSats?: number
@@ -183,17 +184,47 @@ export async function broadcastPayment(
   wallet: WalletInterface,
   attempt: PaymentAttempt,
   originator?: string,
+  journal?: AttemptJournal,
 ) {
   if (attempt.state !== 'signed' || !attempt.proof || !attempt.txid)
     throw new Error('No durable signed payment to send')
   // Official sendWith-only form: no inputs/outputs, so no new transaction or fee.
-  return wallet.createAction(
-    {
-      description: 'Send saved Pagestream payment',
-      options: { sendWith: [attempt.txid], acceptDelayedBroadcast: false },
-    },
-    originator,
-  )
+  const record = (value: unknown) => {
+    const results = value && typeof value === 'object'
+      ? (value as { sendWithResults?: unknown }).sendWithResults : undefined
+    const matching = Array.isArray(results)
+      ? results.filter(item => item && item.txid === attempt.txid) : []
+    const status = matching.length === 1 &&
+      ['unproven', 'sending', 'failed'].includes(matching[0].status)
+      ? matching[0].status as 'unproven' | 'sending' | 'failed' : 'unknown'
+    if (journal) {
+      const current = journal.get()
+      if (!current || current.txid !== attempt.txid || current.requestId !== attempt.requestId)
+        throw new Error('Original payment journal changed during broadcast')
+      journal.save({ ...current, broadcast: { status, checkedAt: new Date().toISOString() } })
+    }
+    return status
+  }
+  let result
+  try {
+    result = await wallet.createAction(
+      {
+        description: 'Send saved Pagestream payment',
+        options: { sendWith: [attempt.txid], acceptDelayedBroadcast: false },
+      },
+      originator,
+    )
+  } catch (error) {
+    record(error)
+    throw error
+  }
+  const status = record(result)
+  if (status !== 'unproven')
+    throw Object.assign(new Error(
+      `Wallet broadcast status: ${status}. Keep the original payment; no replacement payment was created.`,
+    ), { code: `PAGESTREAM_BROADCAST_${status.toUpperCase()}` })
+  // "unproven" is the wallet's broadcast result, not proof of mining.
+  return result
 }
 
 function sameTemplate(a: Transaction, b: Transaction) {

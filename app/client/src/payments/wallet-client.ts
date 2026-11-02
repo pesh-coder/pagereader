@@ -220,6 +220,7 @@ export async function openWallet(callbacks: {
                 paymentWallet,
                 journal.get()!,
                 args[1] as string | undefined,
+                journal,
               )
             }
             ok = true
@@ -404,13 +405,12 @@ export async function openWallet(callbacks: {
         feeSats: attempt.feeSats,
         state: 'pending',
       })
-      // A prior broadcast may have succeeded despite an error. Retrying sendWith
-      // refers only to the same signed tx; proof submission is still safe if known.
-      try {
-        await broadcastPayment(paymentWallet, attempt, location.host)
-      } catch {
-        /* server validates the saved transaction */
-      }
+      // Submit only the original transaction. A failed/unknown sendWith result
+      // must remain visible instead of being swallowed before server acceptance.
+      await broadcastPayment(paymentWallet, attempt, location.host, {
+        get: () => getAttempt(edition, page),
+        save: value => localStorage.setItem(attemptKey(edition, page), JSON.stringify(value)),
+      })
       const path = editionScoped
         ? `/api/editions/${encodeURIComponent(edition)}/pages/${page}`
         : `/api/pages/${page}`
