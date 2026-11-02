@@ -13,6 +13,8 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 
 **Pricing decision, 2026-11-02:** the seller receives 5 sats per page and the reader pays miner fees on top. We should use supported processor fee policy, not assume that Desktop's lower fee guarantees timely mining. The maintainer recommends 100 sats/kB for consistent usability. A 5,000-sat monthly allowance can remove repeated wallet approvals, but it does not prove 500-ms page turns or satisfy the original per-session requirement. The current app's per-page higher-fee approval is still a testing workaround.
 
+**Acceptance stays as briefed:** one wallet approval per session remains required. The monthly allowance is a stack gap; closing the tab stops new purchases but does not prove the wallet grant expires. We must use supported wallet session behavior or leave this criterion unmet. Wallet modification and replacing the wallet limit with an app/server limit remain outside scope.
+
 ## 1. Who is calling
 
 The wallet's **identity key** is a public key used to find purchases and bookmarks. There is no account registration.
