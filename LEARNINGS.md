@@ -7,9 +7,11 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 - Built: eight complete books, wallet-free previews, paid delivery/recovery, identity-based bookmarks and a visible page-spend counter.
 - Observed: three Desktop mainnet purchases, one prompt-free paid turn, and hosted recovery of owned pages and their 74-sat total.
 - Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-10-27: mainnet, payment-ready, purchases enabled.
-- **The POC is not complete:** phone payment/resume, session approval, paid-page speed and the timed six-step demo remain open.
+- **The POC is not complete:** phone spending reconciliation, cross-device resume, approval behavior, paid-page speed and the timed six-step demo remain open.
 - The [acceptance register and remaining work](docs/project-requirements-status.md) separates implementation gaps from live checks. Team sharing is also unconfirmed.
-- The [senior review changes](docs/review-feedback-r1.md) are deployed. Phone previews and a native permission prompt have been observed; successful phone payment remains open.
+- The [senior review changes](docs/review-feedback-r1.md) are deployed. The user reports phone page 3 opened with 28 sats in the counter; native wallet reconciliation and repeat paid turns remain open.
+
+**Pricing decision, 2026-11-02:** the seller receives 5 sats per page and the reader pays miner fees on top. We should use supported processor fee policy, not assume that Desktop's lower fee guarantees timely mining. The maintainer recommends 100 sats/kB for consistent usability. A 5,000-sat monthly allowance can remove repeated wallet approvals, but it does not prove 500-ms page turns or satisfy the original per-session requirement. The current app's per-page higher-fee approval is still a testing workaround.
 
 ## 1. Who is calling
 
