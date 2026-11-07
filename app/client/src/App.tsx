@@ -635,10 +635,15 @@ export default function App() {
         </Panel>
       )}
       {panel === 'purchase' && book && (
-        <Panel title="Reading beyond the preview" close={close}>
+        <Panel title={`Open page ${target}`} close={close}>
           <p>
-            {config.priceSats} sats for this page, plus up to{' '}
-            {config.provisional.maxPageFeeSats} sat in miner fees.
+            A new page costs {config.priceSats} sats plus the wallet’s miner fee.
+            If you already own page {target}, it opens without another charge.
+          </p>
+          <p className="subtle">
+            We check the wallet’s fee before paying. The initial fee limit is{' '}
+            {config.provisional.maxPageFeeSats} sat, not a fee quote. A higher fee
+            needs your separate approval.
           </p>
           <p className="subtle">
             {config.provisional.readerPermissionCopy} Your wallet controls when
@@ -654,8 +659,8 @@ export default function App() {
           )}
           <button className="paid-action wide" onClick={continuePurchase}>
             {paused
-              ? 'Check existing purchase'
-              : `Continue · up to ${maxCost} sats`}
+              ? `Check page ${target}`
+              : `Continue to page ${target} · up to ${maxCost} sats`}
           </button>
         </Panel>
       )}

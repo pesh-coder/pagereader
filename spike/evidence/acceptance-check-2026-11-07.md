@@ -29,6 +29,14 @@ Reviewed the active reader entry (`app/client/src/main.tsx` → `App.tsx`), read
 
 ## Still open
 
+### Page-4 attempt: fee cap, no new payment
+
+After the free-preview check, the owner reported that confirming did not open the next page and native wallet Activity contained no new outgoing transaction. A read-only receiving-wallet `listActions` check still showed six historical completed incoming actions and no new page payment. The subsequent phone screenshot identifies **page 4**, a **23-sat wallet fee quote**, and an **unsigned payment cancelled because it exceeded the initial 1-sat cap**. The reader total remains 28 sats. This establishes a fee-cap abort, not another mining delay or a successful new purchase; the earlier possibility that the user merely reopened page 3 was not the cause of this screenshot.
+
+The screenshot offers a separate approval of **up to 28 sats for page 4** (5 price + up to 23 fee), within the prepared one-page test bound. The ordinary 1-sat retry cannot accept that fee. Prompt count after a signed purchase, the new total and timing are still pending; this aborted attempt is retained as diagnostic evidence, not a qualifying paid latency sample.
+
+The introductory panel was clarified to show its target page number, explain that already-owned pages are free, and distinguish the initial fee limit from a wallet quote. This is a copy correction, not an increase to the cap or a claim that the payment failure was fixed. Client build/lint pass; the local wallet-free preview confirms the revised panel wording without initiating wallet calls.
+
 The owner subsequently confirmed that phone owned-page resume still displays the same **28-sat total**. This closes that read-only resume/counter check; the reply did not state the two wallet Activity statuses, so their local proof refresh is not assumed complete.
 
 Still open: native wallet status refresh; supported same-identity cross-device resume; native session approval/allowance enforcement; paid p95; remaining negative, recovery, race and stopping tests; 90-second demo and team receipt. Recorded spending already matches the supplied Desktop and phone records, but broader failure/pending accounting still needs verification.
