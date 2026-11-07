@@ -113,7 +113,16 @@ test('authenticated page-3 challenge reaches the official wallet API at 5 sats w
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => { server.closeAllConnections(); server.close(); store.close() })
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-  const auth = new AuthFetch(readerApi)
+  const challenges: { prefix: string | null; timing: string | null }[] = []
+  const transport: typeof fetch = async (input, init) => {
+    const response = await fetch(input, init)
+    if (response.status === 402) challenges.push({
+      prefix: response.headers.get('x-bsv-payment-derivation-prefix'),
+      timing: response.headers.get('Server-Timing'),
+    })
+    return response
+  }
+  const auth = new AuthFetch(readerApi, undefined, undefined, undefined, undefined, transport)
   const requestId = crypto.randomUUID()
   await assert.rejects(() => auth.fetch(base + '/api/pages/3', { headers: { 'x-bsv-request-id': requestId }, paymentRetryAttempts: 1 }), /Stop before spend/)
   assert.equal(quotedSats, 5)
@@ -124,6 +133,12 @@ test('authenticated page-3 challenge reaches the official wallet API at 5 sats w
   assert.equal(store.purchases(key, edition.id).length, 0)
   await assert.rejects(() => auth.fetch(base + '/api/pages/3', { headers: { 'x-bsv-request-id': requestId }, paymentRetryAttempts: 1 }), /Stop before spend/)
   assert.equal(store.intent(key, edition.id, 3)?.prefix, intent.prefix)
+  assert.equal(challenges.length, 2)
+  for (const challenge of challenges) {
+    assert.equal(challenge.prefix, intent.prefix)
+    assert.match(challenge.timing ?? '', /app;dur=\d+\.\d+, auth;dur=\d+\.\d+, wallet;dur=\d+\.\d+/)
+    assert.match(challenge.timing ?? '', /internalize;dur=0\.000/)
+  }
   const otherTab = await auth.fetch(base + '/api/pages/3', { headers: { 'x-bsv-request-id': crypto.randomUUID() }, paymentRetryAttempts: 1 })
   assert.equal(otherTab.status, 409)
 })

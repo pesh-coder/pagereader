@@ -521,7 +521,7 @@ export function createReaderGateway(
             wallet!.beginPayment(edition, page, requestId, feeApproval?.maxFeeSats ?? readerFeeLimit)
             allowSpend = true
             body = await paidResponse(
-              await wallet!.auth.fetch(location.origin + api(`pages/${page}`), {
+              await (wallet!.fetchPaidPage?.bind(wallet) ?? wallet!.auth.fetch.bind(wallet!.auth))(location.origin + api(`pages/${page}`), {
                 headers: { 'x-bsv-request-id': requestId },
                 paymentRetryAttempts: 1,
                 labels: ['pagestream reader'],

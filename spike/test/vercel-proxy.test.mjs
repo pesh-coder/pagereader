@@ -11,6 +11,19 @@ import { Store } from '../src/store.ts'
 import { createProbe } from '../src/probe.ts'
 import { loadEdition } from '../src/content.ts'
 
+test('approved deployment scopes the temporary overlap pilot to one exact wallet edition and page', async () => {
+  const previous = process.env.PAGESTREAM_BACKEND_ORIGIN
+  process.env.PAGESTREAM_BACKEND_ORIGIN = 'https://api.example.com'
+  try {
+    const { config } = await import('../../vercel.mjs')
+    assert.equal(config.buildCommand, 'VITE_PAGESTREAM_PAYMENT_OVERLAP_TARGET=030ddc151d6a23c8cb56bebdc53cbfbdd849d3e8f5fe5d08e73dab79e77b1c7f57/1661-922e2a12ccb43a4c9544c260b2166c6ad2097aeb5957faeee113f173bb857cd0-paragraphs-1800-v1/35 npm --prefix app/client run build && node deploy/stage-frontend.mjs')
+    assert.ok(config.rewrites.some(route => route.source === '/api/:path*' && route.destination === 'https://api.example.com/api/:path*'))
+  } finally {
+    if (previous === undefined) delete process.env.PAGESTREAM_BACKEND_ORIGIN
+    else process.env.PAGESTREAM_BACKEND_ORIGIN = previous
+  }
+})
+
 test('split deployment uses the frontend origin, rejects invalid origins and leaves private routes uncached', () => {
   const credentialFixture = new URL('https://api.example.com')
   credentialFixture.username = 'fixture'

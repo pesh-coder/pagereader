@@ -46,6 +46,7 @@ Known-ancestor handling and complete proof restoration are implemented, alongsid
 
 **Implementation or stack gaps**
 
+- Meet the 500-ms paid-turn target first. A disabled-by-default app-side pilot overlaps the original payer broadcast and receiver submission while still waiting for both outcomes before delivery. All 118 local tests pass, but native improvement and service-side concurrency remain unverified. No deployment or new paid run was performed. [Pilot details](../spike/evidence/receiver-latency-investigation-2026-11-07.md#original-transaction-overlap-pilot).
 - Meet the retained session approval requirement through supported wallet behavior. The monthly grant is a documented gap, not a session pass; no wallet modification is in scope.
 - Validate supported allowance enforcement and legacy port-labelled spending. Reader accounting does not repair the wallet's limit query.
 - Investigate and improve paid-page latency. The current deliberate no-paid-prefetch design avoids charging for unread pages; it has not met 500 ms.
@@ -70,7 +71,7 @@ These are the remaining POC requirements, not a request to add accounts, wallet 
 - **Receiving identity:** the hosted manifest counterparty matched the original local public identity in the hosted recovery evidence. Deployed private-key equality was not independently inspected; do not describe public metadata as that proof.
 - **Costs:** 318 sats across five known debit transactions explains the recorded page/permission amounts: pages 74, grants 244. There is no separate unexplained amount in that reconciliation; it does not prove the complete wallet or cross-device history.
 - **Allowance:** `walletLimitSats: 5000` requests the manifest allowance; the observed grant is wallet-managed and monthly. It is not a server-side session cap.
-- **Tests:** latest full `npm.cmd test` in `spike` on 2026-11-07: **87 passed, 0 failed**, including reader fee consent across turns, clearing on logout/identity change, uncertain/read-only protection and non-persistent higher overrides. Existing fee tests refuse fees above the ceiling and unknown fees. Type checks and client build/lint passed. Local tests do not complete live acceptance.
+- **Tests:** latest full `npm test` in `spike` on 2026-11-07: **118 passed, 0 failed**, including original-transaction delivery overlap, reader fee consent, uncertain/read-only protection and recovery. Type checks and client build/lint passed. The overlap pilot remains disabled by default; local tests do not complete live acceptance.
 - **Hosting terms/cost:** the recorded decision was a private own-wallet POC on existing Railway Hobby, not a guaranteed $0 deployment or a demonstrated Vercel policy exception. The repository does not establish plan compliance; no new provider-policy determination is claimed here. See the [setup guide](../deploy/vercel-railway.md).
 - **Upstream fix:** PR #124 release/legacy behavior is described as of the recorded investigation. Current release status was not rechecked in this documentation update.
 

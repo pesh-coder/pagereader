@@ -84,7 +84,8 @@ export class ReadingTimings {
     const metrics = call.paymentMetrics
     const safeMetrics = metrics && Number.isInteger(metrics.knownAncestors) && metrics.knownAncestors >= 0 && metrics.knownAncestors <= 32 &&
       [metrics.proofBytes, metrics.transportBytes].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 16 * 1024 * 1024)
-      ? { knownAncestors: metrics.knownAncestors, proofBytes: metrics.proofBytes, transportBytes: metrics.transportBytes } : undefined
+      ? { knownAncestors: metrics.knownAncestors, proofBytes: metrics.proofBytes, transportBytes: metrics.transportBytes,
+          ...(['serial', 'overlap'].includes(metrics.deliveryMode ?? '') ? { deliveryMode: metrics.deliveryMode } : {}) } : undefined
     current.sample.walletCalls.push({ method: call.method, ms: call.ms, ok: call.ok,
       ...(call.error?.code !== undefined ? { code: call.error.code } : {}),
       ...(safeMetrics ? { paymentMetrics: safeMetrics } : {}),

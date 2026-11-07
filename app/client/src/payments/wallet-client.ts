@@ -12,12 +12,13 @@ import {
 } from './payment-action.js'
 import { reconcileUnsignedPreparation } from './unsigned-preparation.js'
 import { recoveryHistoryFingerprint, readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
+import { PaymentDelivery, type DeliveryOutcome } from './payment-delivery.js'
 
 export interface WalletCall {
   method: string
   ms: number
   ok: boolean
-  paymentMetrics?: { knownAncestors: number; proofBytes: number; transportBytes: number }
+  paymentMetrics?: { knownAncestors: number; proofBytes: number; transportBytes: number; deliveryMode?: 'serial' | 'overlap' }
   error?: {
     name?: string
     code?: number | string
@@ -50,9 +51,12 @@ export async function openWallet(callbacks: {
   spend: (spend: Spend) => void
   currentPage: () => number
   canSpend: () => boolean
-}) {
+}, options: {
+  acquireWallet?: typeof connectDesktopWallet
+  paymentDeliveryTarget?: string
+} = {}) {
   const start = performance.now()
-  const { wallet, identityKey } = await connectDesktopWallet().catch(
+  const { wallet, identityKey } = await (options.acquireWallet ?? connectDesktopWallet)().catch(
     (error) => {
       callbacks.call({
         method: 'wallet acquisition (isAuthenticated + identity key)',
@@ -115,6 +119,12 @@ export async function openWallet(callbacks: {
     },
   }
   const lockName = `pagestream-payment:${identityKey}`
+  let activeDelivery: PaymentDelivery | undefined
+  // Build-time pilot switch. Keep ordinary/native delivery serial until the
+  // original-transaction overlap has been checked on the installed wallets.
+  const overlapTarget = options.paymentDeliveryTarget ?? (import.meta as ImportMeta & {
+    env?: { VITE_PAGESTREAM_PAYMENT_OVERLAP_TARGET?: string }
+  }).env?.VITE_PAGESTREAM_PAYMENT_OVERLAP_TARGET
   const paymentWallet = new Proxy(wallet, {
     get(target, property) {
       const value = Reflect.get(target, property)
@@ -187,6 +197,7 @@ export async function openWallet(callbacks: {
         let ok = false
         let failure: WalletCall['error']
         let paymentMetrics: WalletCall['paymentMetrics']
+        let broadcastDelivery: PaymentDelivery | undefined
         const execute = async () => {
           try {
             if (property === 'createAction' && !callbacks.canSpend())
@@ -211,7 +222,8 @@ export async function openWallet(callbacks: {
                 : await value.apply(target, args)
             if (property === 'createAction') {
               paymentMetrics = { knownAncestors: result.ancestorCount ?? 0,
-                proofBytes: result.tx?.length ?? 0, transportBytes: result.transportTx?.length ?? result.tx?.length ?? 0 }
+                proofBytes: result.tx?.length ?? 0, transportBytes: result.transportTx?.length ?? result.tx?.length ?? 0,
+                deliveryMode: activeDelivery ? 'overlap' : 'serial' }
               const txid =
                 result.txid ??
                 (result.tx
@@ -235,12 +247,17 @@ export async function openWallet(callbacks: {
                 feeSats,
                 state: 'pending',
               })
-              await broadcastPayment(
+              const send = () => broadcastPayment(
                 paymentWallet,
                 journal.get()!,
                 args[1] as string | undefined,
                 journal,
               )
+              if (activeDelivery) {
+                broadcastDelivery = activeDelivery
+                broadcastDelivery.startBroadcast(send)
+              }
+              else await send()
             }
             ok = true
             // Keep full proofs for fees/recovery; use only server-negotiated
@@ -251,19 +268,23 @@ export async function openWallet(callbacks: {
             failure = walletError(error)
             throw error
           } finally {
-            callbacks.call({
+            const report = (sent?: DeliveryOutcome<unknown>) => callbacks.call({
               method:
                 property === 'createAction'
                   ? 'page payment workflow'
                   : String(property),
               ms: performance.now() - started,
-              ok,
+              ok: ok && (!sent || sent.ok),
               ...(paymentMetrics ? { paymentMetrics } : {}),
-              ...(failure ? { error: failure } : {}),
+              ...(failure ? { error: failure } : sent?.ok === false ? { error: walletError(sent.error) } : {}),
             })
+            // Keep the workflow's real elapsed time and failure result even
+            // when receiver acceptance overlaps the payer's broadcast wait.
+            if (broadcastDelivery) broadcastDelivery.observeBroadcast(report)
+            else report()
           }
         }
-        return property === 'createAction' && navigator.locks
+        return property === 'createAction' && navigator.locks && !activeDelivery
           ? navigator.locks.request(lockName, execute)
           : execute()
       }
@@ -313,6 +334,21 @@ export async function openWallet(callbacks: {
   )
   return {
     auth,
+    async fetchPaidPage(...args: Parameters<AuthFetch['fetch']>) {
+      if (activeDelivery) throw new Error('Another payment delivery is still active')
+      const attempt = journal.get()
+      const path = new URL(args[0], location.origin).pathname
+      if (!attempt || (path !== `/api/editions/${encodeURIComponent(attempt.edition)}/pages/${attempt.page}` &&
+        path !== `/api/pages/${attempt.page}`))
+        throw new Error('Paid request does not match the original payment attempt')
+      const overlapEnabled = overlapTarget === `${identityKey}/${attempt.edition}/${attempt.page}`
+      if (!overlapEnabled) return auth.fetch(...args)
+      const delivery = new PaymentDelivery()
+      activeDelivery = delivery
+      const execute = () => delivery.run(() => auth.fetch(...args))
+      try { return await (navigator.locks ? navigator.locks.request(lockName, execute) : execute()) }
+      finally { activeDelivery = undefined }
+    },
     identityKey,
     retainPaymentAncestors(values: { txid: string; transaction: string }[]) {
       ancestorCache.clear()
@@ -378,6 +414,7 @@ export async function openWallet(callbacks: {
       }
     },
     beginPayment(edition: string, page: number, requestId: string, approvedMaxFeeSats?: number) {
+      if (activeDelivery) throw new Error('The original payment delivery is still active')
       activeAttemptKey = attemptKey(edition, page)
       const existing = journal.get()
       if (
@@ -431,6 +468,7 @@ export async function openWallet(callbacks: {
         )
     },
     async recoverPayment(edition: string, page: number, editionScoped = false) {
+      if (activeDelivery) throw new Error('The original payment delivery is still active')
       const attempt = getAttempt(edition, page)
       if (!attempt?.proof || !attempt.txid || attempt.state !== 'signed')
         throw new Error(

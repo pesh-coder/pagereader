@@ -515,6 +515,7 @@ export function createProbe(options: {
       ) {
         // Same durable intent after an explicitly aborted unsigned action. This
         // reuses the original nonce; no second reservation or expiry is created.
+        timing(res);
         res
           .status(402)
           .set({
@@ -542,6 +543,9 @@ export function createProbe(options: {
       // Explicit BRC-105 challenge contract; no response-method interception.
       const prefix = await createNonce(wallet);
       db(() => store.challenge(key, edition.id, page, prefix));
+      // Capture the unpaid leg too: otherwise a slow 402 cannot be separated
+      // into server work and transport in the reader's existing timing export.
+      timing(res);
       res
         .status(402)
         .set({
