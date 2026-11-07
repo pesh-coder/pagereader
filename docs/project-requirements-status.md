@@ -2,7 +2,7 @@
 
 Updated 2026-11-07. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. The original acceptance targets are retained, including where the observed wallet behavior conflicts with them.
 
-**Current checkpoint:** all four previously unproven phone/funding transactions now have 701 confirmations on WhatsOnChain and `MINED` on Arcade. The two phone debit proof endpoints return 200. The mining blocker is closed. All 16 hosted public previews passed wallet-free HTTP checks; the physical-phone disconnected test is still open. Source/schema audit closes C7 (no account), and actual mainnet payments on both wallets close C9. These narrow passes do not complete session approval, paid latency, same-identity resume or the final demo. [Evidence](../spike/evidence/acceptance-check-2026-11-07.md).
+**Current checkpoint:** all four previously unproven phone/funding transactions now have 701 confirmations on WhatsOnChain and `MINED` on Arcade. The two phone debit proof endpoints return 200. The mining blocker is closed. All 16 hosted public previews passed wallet-free HTTP checks; the owner also confirmed both Holmes previews load on the phone after logging out of the app connection, with no error or wallet prompt (C1). Source/schema audit closes C7 (no account), and actual mainnet payments on both wallets close C9. These narrow passes do not complete session approval, paid latency, same-identity resume or the final demo. [Evidence](../spike/evidence/acceptance-check-2026-11-07.md).
 
 **Agreed pricing:** keep the seller's price at 5 sats per new page; the reader pays miner fees on top, with the total visible. Use the maintainer-recommended 100 sats/kB for this POC; a processor's lower acceptance minimum does not establish timely mining. Desktop returned to 250 after restoration and the user was advised to set 100 again and restart; that latest setting has not been observed by the agent. Baseline wallet/reader debits match: Desktop 74 sats, phone page 28 sats, plus a separate phone grant of 199. Broader pending/recovery accounting is still open. The app defaults to a 1-sat fee cap and offers an explicit higher-fee approval per page attempt; a suitable bounded fee-consent policy is still needed for seamless turns.
 
@@ -28,7 +28,7 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 
 | Criterion | Status | Evidence and what remains |
 |---|---|---|
-| C1 Free browsing/previews, no wallet or errors on both devices | UNRESOLVED | Eight books and two public pages each; hosted 16-page checks pass. Phone navigation was fixed and the user reached paid page 3. A clean disconnected-wallet phone preview test is still needed to close the earlier failure. |
+| C1 Free browsing/previews, no wallet or errors on both devices | PASS | Eight books and both previews pass the 16-page wallet-free hosted checks. Desktop free reading was already observed; on 7 November the owner logged out of the app wallet connection on the physical phone and confirmed Holmes pages 1 and 2 load with no errors or wallet prompt, closing the earlier phone failure. |
 | C2 One native prompt through first visit and 20 paid turns | FAIL | Grouped 5,000/month grant cost 5 sats; next page had zero prompts. Session scope is not met; clean-origin cohorts on both wallets are missing. |
 | C3 Paid page p95 ≤500 ms, 20 turns per wallet | UNRESOLVED | One paid sample: 9.01 s HTTP, 47.33 s request-to-frame marker. No qualifying cohort. Diagnose/optimize and measure; warm owned reads do not count. |
 | C4 Accurate always-visible spend | UNRESOLVED | Baseline comparison passes: Desktop wallet matches 3 page payments totaling 74; phone wallet debit matches the 28-sat reader total, with a separate 199-sat grant. Phone funding/debits reconcile to 6,773. Broader uncertain-payment and same-identity cross-device accounting remain open; wallet allowance accounting is tracked under C2. Neither recorded debit nor server acceptance proves mining. |
@@ -53,7 +53,7 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 **Live checks still needed**
 
 - Browser's existing page purchase, debit and mining status are reconciled; same-wallet owned-page reopening was observed. Refresh the local wallet proof/status, then establish supported identity continuity for the cross-device story. Current identities differ.
-- Retest wallet-free previews on the phone; observe prompt count, scope, cost and allowance consumption on both wallets.
+- Wallet-free phone previews passed. Still observe paid prompt count, scope, cost and allowance consumption on both wallets.
 - Collect 20 distinct paid-page samples per wallet, preserving slow/failed samples; verify underpayment, replay, lost response and concurrent purchases.
 - Close the tab mid-chapter and confirm no additional purchases start. An already-submitted transaction may finish after close; closing cannot cancel it.
 - Rehearse the six-step mainnet story in about 90 seconds, then share the reviewed note with the team.

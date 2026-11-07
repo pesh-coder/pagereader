@@ -6,7 +6,7 @@ Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Orig
 
 | Order | Remaining work | Evidence needed to finish |
 |---|---|---|
-| 1 | Phone and cross-device reading | Refresh existing wallet statuses, resume owned page 3 at the same 28-sat total, retest disconnected-wallet previews, then establish supported same-identity resume. Different existing identities do not pass the original cross-device story. |
+| 1 | Cross-device reading | Phone free previews and owned-page resume at 28 sats passed. Establish supported same-identity resume; different existing identities do not pass the original cross-device story. Local wallet proof/status refresh is still unreported. |
 | 2 | Resolve one native approval per session | Establish a supported wallet session budget, correct price-plus-fee allowance consumption and silent subsequent purchases. Current monthly grant and per-page app fee exceptions do not pass. No wallet modification or app/server substitute for the wallet limit. |
 | 3 | Diagnose and improve paid-turn latency | Fresh stage timings, a demonstrated improvement, then 20 distinct new paid turns per wallet with p95 <=500 ms. Include cold/slow/failed attempts. |
 | 4 | Complete spending/recovery accounting | Baseline comparison is complete: Desktop 74 sats; phone page 28 sats plus separate grant 199 sats. Verify pending, failed/recovered and cross-device cases without duplicate or omitted costs. |
@@ -17,7 +17,9 @@ Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Orig
 
 **Phone owned-page resume passed:** on 7 November the owner confirmed the same 28-sat book total after reopening/resuming. The two local wallet Activity statuses were not supplied; mining is independently confirmed, but UI proof refresh is not assumed complete.
 
-**Next:** log out of Pagestream's app connection, return to Library, open Holmes and read free pages 1 and 2. Confirm both load with no errors or native wallet prompt; do not choose Continue reading or page 3 in this check. Confirm Desktop's saved custom rate is 100 sats/kB before a later, explicitly budgeted paid run; restoring Desktop previously reset it to 250.
+**Phone free previews passed:** the owner logged out of the app connection and confirmed Holmes pages 1 and 2 both load without errors or a wallet prompt. C1 is closed.
+
+**Next practical run:** one explicit phone purchase of Holmes page 4, maximum **28 sats total** (5 seller price + at most 23 miner fee), with no additional paid permission grant. First resume the owned page 3. If page 4 is already owned, open it without purchasing and report that. Otherwise inspect the quote, proceed only within that bound, and stop if the cost is higher, a new paid grant is requested, or the payment becomes uncertain. Record the native wallet prompt count separately from the app's fee approval, the elapsed time and final book total. A rough user timing is diagnostic only, not a qualifying p95 sample. No automated purchase has been initiated; only the owner can approve the bounded wallet operation. Confirm Desktop's saved rate is 100 sats/kB before any later Desktop paid run.
 
 ## Historical device evidence, 2 November
 

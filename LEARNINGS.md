@@ -6,7 +6,7 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 
 - Built: eight complete books, wallet-free previews, paid delivery/recovery, identity-based bookmarks and a visible page-spend counter.
 - Observed: three Desktop mainnet purchases totaling 74 sats and one phone purchase totaling 28 sats, with matching recorded debits. Both phone debits and their funding transfers are now mined; the earlier mining blocker is closed.
-- Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-11-07: mainnet, payment-ready, purchases enabled. All 16 public previews passed wallet-free HTTP checks.
+- Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-11-07: mainnet, payment-ready, purchases enabled. All 16 public previews passed wallet-free HTTP checks; the owner also confirmed both Holmes previews on the phone after app logout, with no errors or wallet prompt. Free-preview acceptance passes.
 - **The POC is not complete:** same-identity cross-device resume, session approval, paid-page speed, remaining live fault/stopping tests and the timed six-step demo remain open.
 - The [acceptance register and remaining work](docs/project-requirements-status.md) separates implementation gaps from live checks. Team sharing is also unconfirmed.
 - The [senior review changes](docs/review-feedback-r1.md) are deployed. Phone page 3 opened and resumes at 28 sats; repeat paid turns and broader pending/recovery accounting remain open.

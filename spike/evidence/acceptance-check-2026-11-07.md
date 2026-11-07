@@ -19,7 +19,9 @@ Sources: `https://api.whatsonchain.com/v1/bsv/main/tx/hash/<txid>` and `https://
 
 ## Hosted previews: 16/16 pass
 
-The hosted `/api/library` returned eight books. Explicit wallet-free GETs of both public pages for each edition returned HTTP 200 and nonempty paragraphs: Holmes, Pride and Prejudice, Frankenstein, Dorian Gray, Dracula, Meditations, Metamorphosis and Alice. No authentication or payment headers were used. Response times from the agent network ranged from 389 to 973 ms; these are neither native-device tests nor paid-turn measurements. Health returned mainnet, payment-ready and purchases enabled. A disconnected-wallet physical-phone retest is still required for C1.
+The hosted `/api/library` returned eight books. Explicit wallet-free GETs of both public pages for each edition returned HTTP 200 and nonempty paragraphs: Holmes, Pride and Prejudice, Frankenstein, Dorian Gray, Dracula, Meditations, Metamorphosis and Alice. No authentication or payment headers were used. Response times from the agent network ranged from 389 to 973 ms; these are neither native-device tests nor paid-turn measurements. Health returned mainnet, payment-ready and purchases enabled.
+
+The owner then logged out of Pagestream's app wallet connection on the physical phone, opened Holmes from Library and confirmed **both pages 1 and 2 load, with no errors or wallet prompt**. Together with the existing Desktop observations and hosted checks, this closes C1 and the earlier phone free-page failure. No phone paid page was requested in this preview check.
 
 ## No-account audit: pass
 
@@ -29,4 +31,4 @@ Reviewed the active reader entry (`app/client/src/main.tsx` → `App.tsx`), read
 
 The owner subsequently confirmed that phone owned-page resume still displays the same **28-sat total**. This closes that read-only resume/counter check; the reply did not state the two wallet Activity statuses, so their local proof refresh is not assumed complete.
 
-Still open: native wallet status refresh; final disconnected-wallet phone previews; supported same-identity cross-device resume; native session approval/allowance enforcement; paid p95; remaining negative, recovery, race and stopping tests; 90-second demo and team receipt. Recorded spending already matches the supplied Desktop and phone records, but broader failure/pending accounting still needs verification.
+Still open: native wallet status refresh; supported same-identity cross-device resume; native session approval/allowance enforcement; paid p95; remaining negative, recovery, race and stopping tests; 90-second demo and team receipt. Recorded spending already matches the supplied Desktop and phone records, but broader failure/pending accounting still needs verification.
