@@ -81,3 +81,29 @@ All 118 local tests pass, including real SDK/AuthFetch/middleware tests with iso
 Native benefit is unmeasured. A wallet may serialize concurrent calls, and concurrent payer/receiver posting may expose service-side races that synthetic receivers cannot reproduce. Do not enable this for general purchases or claim a 500-ms result from these tests. The next check is a single bounded native pilot, preserving the original attempt, actual wallet debit and both operation outcomes; no further paid cohort is warranted until it shows improvement without correctness regressions. No deployment, wallet change, new grant, purchase or external message was performed here. The 500-ms requirement remains open.
 
 The owner subsequently approved deployment and one phone purchase of Holmes page 35, capped at 28 sats (5 price + up to 23 fee), without a new paid permission grant. `vercel.mjs` now supplies the exact public wallet/edition/page target through its build command; this avoids changing account-wide hosting variables. Remove that temporary build prefix after the pilot. All 119 predeployment tests pass, including a check of the exact deployment scope; the targeted frontend build, static packaging and backend build pass. Before deployment, mainnet health and the receiver public identity match the prior setup, and all 16 public previews return 200. Deployment verification and the actual native result are still pending at this commit.
+
+## Native page-35 overlap result
+
+Both hosts deployed `4d17c78` successfully. The hosted frontend contained the exact scoped target; mainnet health, receiver identity, eight books and all 16 public previews passed. The owner supplied native capture `abfb30cb-0459-4f23-b72a-cf0e09e3d469`, Browser 1.6.3, for one new explicit page-35 purchase. It confirms `deliveryMode: overlap`, successful payer workflow and visible delivery, with no error notes. Eight known ancestors reduced the complete 4,065-byte proof to 302 HTTP bytes.
+
+| Stage | Page 35 |
+|---|---:|
+| Request to visible frame | **6,406.2 ms** |
+| Payer workflow, including broadcast | 1,464.1 ms |
+| Wallet prepare / sign / sendWith | 547.0 / 117.1 / 686.2 ms |
+| Initial 402 HTTP | 1,041.6 ms |
+| Measured app handler inside 402 | 48.345 ms |
+| Paid HTTP | 3,869.3 ms |
+| Measured app handler inside paid HTTP | 3,099.130 ms |
+| Receiver acceptance inside app | 3,060.538 ms |
+| Root validation inside acceptance | 154.822 ms |
+| Remote storage inside acceptance | **2,896.538 ms** |
+| Paid request authentication / SQLite | 10.660 / 18.371 ms |
+
+The 402 has about 993 ms outside the measured app-handler span. This includes the frontend/proxy/network path and unmeasured response processing; the export cannot isolate those contributors. It is not proof of a universal network floor. Server stages are nested in HTTP and payer broadcast overlaps submission; do not sum all rows.
+
+Compared descriptively with page 34's serial 6,122.1 ms, this pilot is 284.1 ms (4.64%) slower overall; remote storage increased from 1,846.176 to 2,896.538 ms. These are two different single-page samples, not a controlled comparison: they do not establish that overlap causes the increase. The pilot has not demonstrated an improvement and misses 500 ms. Do not enable it generally or buy another cohort to manufacture acceptance. The temporary Vercel build target is removed by the follow-up cleanup; the tested implementation remains available but disabled by default.
+
+The exported ledger has 33 distinct page/transaction entries for pages 3-35, totaling **924 sats** (165 prices + 759 fees). The only new receipt compared with page 34 is one 28-sat page-35 purchase, TXID `bcc4abf2a2fc4d2f2d635880a65061476d886ecf7dcb193cb3b2b2e53bc2e555`. This is recorded application accounting, not an independent audit of native wallet debits or proof of mining. Empty `prompts` does not establish zero native prompts or grant costs.
+
+The original attachment is preserved unchanged in ignored `runs/phone-timings-abfb30cb.json`, SHA-256 `d867b46514aeffa545bc47f62389e55afc74ba8fd72de4a28437a7c0ed96ff30`. Machine report and stage/ledger comparison are in the adjacent `-report.json` and `-analysis.json`. C3 remains machine-UNRESOLVED (one paid sample), with observed speed failing the target. Next work is service-side acceptance tracing and the hosting/transport path; no further paid purchase is needed to establish these bottlenecks. Native repeated depth-limit prevention, wallet-managed session spending and the other acceptance requirements remain open.
