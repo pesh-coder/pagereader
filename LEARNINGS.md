@@ -81,6 +81,8 @@ Page 20 recovered, but page 33 then failed with the specific wallet error **Maxi
 
 **Fix active on the phone:** page 33 now completes, using eight known ancestors and reducing the payment proof sent over HTTP from 3,612 to 302 bytes. Its one 28-sat purchase brings the book total to **868 sats**. The app still retains complete proofs and the server restores and verifies them. The turn took **7.07 s**, including **2.43 s** receiver acceptance, so speed remains unmet. One successful retry does not prove sustained reading avoids the depth limit. All 105 implementation tests pass. [Pilot results](spike/evidence/phone-page33-pilot-2026-11-07.md).
 
+**Latency investigation:** receiver profiling is deployed and all 107 tests pass. Hosted read-only checks verify the saved page-33 proof in 93?136 ms and read wallet history in 133?201 ms. These do not measure a new payment acceptance or establish an improvement over 7.07 seconds. Future acceptance timings now separate root validation from remote storage. The 500-ms target remains open. [Results](spike/evidence/receiver-latency-investigation-2026-11-07.md).
+
 ## 3. When the wallet prompts
 
 **“Approve 5,000 sats this session” is not what we observed.** On Desktop 3.1.1.0:
