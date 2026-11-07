@@ -70,9 +70,11 @@ test('capture retains a recognized proof-depth diagnosis without retaining the w
   const f = fixture(), token = f.capture.begin(20, 'fixture', false)
   f.advance(50)
   f.capture.wallet({ method: 'createAction', ms: 40, ok: false,
+    paymentMetrics: { knownAncestors: 8, proofBytes: 50000, transportBytes: 500 },
     error: { code: 'WERR_INVALID_OPERATION', message: 'Maximum BEEF depth exceeded. Limit is 12' } })
   f.capture.fail(token)
   const run = JSON.parse(f.capture.export())
   assert.deepEqual(run.samples[0].walletCalls[0].diagnostic, { kind: 'proof-depth-limit', limit: 12 })
+  assert.deepEqual(run.samples[0].walletCalls[0].paymentMetrics, { knownAncestors: 8, proofBytes: 50000, transportBytes: 500 })
   assert.ok(!f.capture.export().includes('Maximum BEEF depth exceeded'))
 })

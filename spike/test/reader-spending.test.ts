@@ -81,7 +81,7 @@ test('explicit reconciliation matches txids only, keeps payment states and canno
     assert.equal(callbacks.canSpend(), false)
     return {
       identityKey: 'reader',
-      auth: { fetch: async (url: string) => { assert.ok(url.endsWith('/me')); return response({ identityKey: 'reader', purchases: [{ page: 3, txid: txid(1), sats: 5 }], bookmark: null }) } },
+      auth: { fetch: async (url: string) => { assert.ok(new URL(url).pathname.endsWith('/me')); return response({ identityKey: 'reader', purchases: [{ page: 3, txid: txid(1), sats: 5 }], bookmark: null }) } },
       paymentFee: () => 1,
       readActionCosts: async () => {
         histories++

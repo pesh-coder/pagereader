@@ -1,25 +1,27 @@
 import { test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
-import { AuthFetch, P2PKH, PrivateKey, ProtoWallet, Script, Transaction, type WalletInterface } from '@bsv/sdk'
+import { AuthFetch, Beef, BEEF_V2, P2PKH, PrivateKey, ProtoWallet, Script, Transaction, type WalletInterface } from '@bsv/sdk'
 import { Store } from '../src/store.js'
 import { createProbe } from '../src/probe.js'
 import { loadEdition } from '../src/content.js'
 
 // Isolated SDK fixtures only: no native wallet, network provider or broadcast.
-async function fixture(t: TestContext, options: { amount?: number; delayed?: boolean; internalizeDelayMs?: number } = {}) {
+async function fixture(t: TestContext, options: { amount?: number; delayed?: boolean; internalizeDelayMs?: number; chainPayments?: boolean; hintsDisabled?: boolean } = {}) {
   const receiver = new ProtoWallet(PrivateKey.fromRandom())
   const reader = new ProtoWallet(PrivateKey.fromRandom())
   const store = new Store(':memory:')
   const edition = loadEdition()
   const identity = (await reader.getPublicKey({ identityKey: true })).publicKey
+  let last: Transaction | undefined
+  const chainKey = PrivateKey.fromRandom(), hintCounts: number[] = [], paymentSizes: number[] = []
   let creates = 0, internalizes = 0, paused = false
   let release!: () => void
   let started!: () => void
   const approvalStarted = new Promise<void>(resolve => { started = resolve })
   const approval = new Promise<void>(resolve => { release = resolve })
   const serverWallet = new Proxy(receiver, { get(target, property) {
-    if (property === 'internalizeAction') return async () => { internalizes++; if (options.internalizeDelayMs) await new Promise(resolve => setTimeout(resolve, options.internalizeDelayMs)); return { accepted: true } }
+    if (property === 'internalizeAction') return async (args: Parameters<WalletInterface['internalizeAction']>[0]) => { if (options.chainPayments) { assert.ok(!Beef.fromBinaryStrict(args.tx).txs.some(tx => tx.isTxidOnly)); assert.equal(Transaction.fromAtomicBEEF(args.tx).getFee(), 1) } internalizes++; if (options.internalizeDelayMs) await new Promise(resolve => setTimeout(resolve, options.internalizeDelayMs)); return { accepted: true } }
     const value = Reflect.get(target, property)
     return typeof value === 'function' ? value.bind(target) : value
   } }) as WalletInterface
@@ -27,21 +29,27 @@ async function fixture(t: TestContext, options: { amount?: number; delayed?: boo
     if (property === 'createAction') return async (args: Parameters<WalletInterface['createAction']>[0]) => {
       creates++; started()
       if (options.delayed) await approval
-      const key = PrivateKey.fromRandom()
+      const key = options.chainPayments ? chainKey : PrivateKey.fromRandom()
       const script = new P2PKH().lock(key.toAddress())
-      const parent = new Transaction(1, [], [{ satoshis: 5000, lockingScript: script }])
+      const parent = options.chainPayments && last ? last : new Transaction(1, [], [{ satoshis: 5000, lockingScript: script }])
+      const outputIndex = options.chainPayments && last ? 1 : 0
+      hintCounts.push(args.options?.knownTxids?.length ?? 0)
       const amount = options.amount ?? args.outputs![0].satoshis
-      const tx = new Transaction(1, [{ sourceTransaction: parent, sourceTXID: parent.id('hex'), sourceOutputIndex: 0, sequence: 4294967295, unlockingScript: Script.fromHex(''), unlockingScriptTemplate: new P2PKH().unlock(key) }], [
+      const tx = new Transaction(1, [{ sourceTransaction: parent, sourceTXID: parent.id('hex'), sourceOutputIndex: outputIndex, sequence: 4294967295, unlockingScript: Script.fromHex(''), unlockingScriptTemplate: new P2PKH().unlock(key) }], [
         { satoshis: amount, lockingScript: Script.fromHex(args.outputs![0].lockingScript) },
-        { satoshis: 4999 - amount, lockingScript: script },
+        { satoshis: parent.outputs[outputIndex].satoshis! - 1 - amount, lockingScript: script },
       ])
       await tx.sign()
-      return { txid: tx.id('hex'), tx: tx.toAtomicBEEF() }
+      last = tx
+      const beef = Beef.fromBinaryStrict(tx.toAtomicBEEF()); beef.version = BEEF_V2
+      if (options.chainPayments) for (const id of args.options?.knownTxids ?? []) if (beef.findTxid(id)) beef.makeTxidOnly(id)
+      const raw = beef.toBinaryAtomic(tx.id('hex')); paymentSizes.push(raw.length)
+      return { txid: tx.id('hex'), tx: raw }
     }
     const value = Reflect.get(target, property)
     return typeof value === 'function' ? value.bind(target) : value
   } }) as unknown as WalletInterface
-  const server = http.createServer(createProbe({ store, edition, wallet: serverWallet, purchasesPaused: () => paused }))
+  const server = http.createServer(createProbe({ store, edition, wallet: serverWallet, purchasesPaused: () => paused, knownAncestorsEnabled: () => !options.hintsDisabled }))
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => { release(); server.closeAllConnections(); server.close(); store.close() })
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
@@ -58,7 +66,7 @@ async function fixture(t: TestContext, options: { amount?: number; delayed?: boo
   const auth = () => new AuthFetch(wallet, undefined, undefined, undefined, undefined, transport)
   return { store, edition, identity, base, auth, approvalStarted, release,
     pause: () => { paused = true },
-    counts: () => ({ creates, internalizes }), proof: () => proof!, serverTimings,
+    counts: () => ({ creates, internalizes }), proof: () => proof!, serverTimings, hintCounts, paymentSizes,
   }
 }
 
@@ -154,4 +162,35 @@ test('independent clients cannot create a second payment while the original appr
   const reread = await f.auth().fetch(f.base + '/api/owned/3')
   assert.equal((await reread.json()).purchase.txid, txid)
   assert.deepEqual(f.counts(), { creates: 1, internalizes: 1 })
+})
+
+
+test('BRC-105 hints sustain 16 chained payments while the receiver and durable proof remain complete', async t => {
+  const f = await fixture(t, { chainPayments: true })
+  const auth = f.auth()
+  for (let page = 3; page <= 18; page++) {
+    const response = await auth.fetch(f.base + '/api/pages/' + page, { headers: { 'x-bsv-request-id': crypto.randomUUID() }, paymentRetryAttempts: 1 })
+    assert.equal(response.status, 200)
+    const body = await response.json(), saved = JSON.parse(f.store.proof(body.purchase.txid)!.proof)
+    assert.ok(!Beef.fromBinaryStrict(Buffer.from(saved.transaction, 'base64')).txs.some(tx => tx.isTxidOnly))
+    assert.equal(Transaction.fromAtomicBEEF(Buffer.from(saved.transaction, 'base64')).getFee(), 1)
+  }
+  assert.equal(f.hintCounts[0], 0)
+  assert.ok(f.hintCounts.slice(1).every(count => count > 0 && count <= 8))
+  assert.ok(f.paymentSizes.at(-1)! < 1000, 'HTTP proof stays bounded instead of resending the whole chain')
+  assert.deepEqual(f.counts(), { creates: 16, internalizes: 16 })
+  const history = await auth.fetch(f.base + '/api/me?ancestors=1')
+  assert.equal(history.status, 200)
+  const pool = (await history.json()).paymentAncestors
+  assert.ok(pool.length > 0 && pool.length <= 8)
+  for (const item of pool) assert.equal(Transaction.fromAtomicBEEF(Buffer.from(item.transaction, 'base64')).id('hex'), item.txid)
+  const other = new AuthFetch(new ProtoWallet(PrivateKey.fromRandom()) as unknown as WalletInterface)
+  assert.deepEqual((await (await other.fetch(f.base + '/api/me?ancestors=1')).json()).paymentAncestors, [])
+})
+
+test('known-ancestor kill switch keeps legacy full-proof payments available', async t => {
+  const f = await fixture(t, { chainPayments: true, hintsDisabled: true }), auth = f.auth()
+  for (const page of [3, 4]) assert.equal((await auth.fetch(f.base + '/api/pages/' + page,
+    { headers: { 'x-bsv-request-id': crypto.randomUUID() }, paymentRetryAttempts: 1 })).status, 200)
+  assert.deepEqual(f.hintCounts, [0, 0])
 })

@@ -22,7 +22,7 @@ test('two fresh browsers recover the same 74-sat total and exact fees from authe
       identityKey: 'same-reader',
       auth: { fetch: async (url: string) => {
         assert.equal(callbacks.canSpend(), false)
-        assert.ok(url.endsWith('/me'))
+        assert.ok(new URL(url).pathname.endsWith('/me'))
         return new Response(JSON.stringify({ identityKey: 'same-reader', purchases, bookmark: { page: 6, displayed_at: 100 } }))
       } },
       readActionCosts: () => { throw new Error('No wallet history lookup is needed') },

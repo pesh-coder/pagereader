@@ -30,6 +30,7 @@ export interface ReaderPage {
   purchase?: Purchase
 }
 interface Me {
+  paymentAncestors?: { txid: string; transaction: string }[]
   identityKey: string
   purchases: Purchase[]
   bookmark: { page: number; displayed_at: number } | null
@@ -178,10 +179,11 @@ export function createReaderGateway(
     history = 'loading'
     changed()
     try {
-      const result = await readOnly<Me>(api('me'))
+      const result = await readOnly<Me>(api('me') + '?ancestors=1')
       if (wallet !== selectedWallet || edition !== selectedEdition) return
       if (result.identityKey !== wallet!.identityKey)
         throw new Error('Wallet identity did not match server identity.')
+      if (Array.isArray(result.paymentAncestors)) wallet!.retainPaymentAncestors?.(result.paymentAncestors)
       me = result
       const spends = loadSpends()
       for (const purchase of me.purchases) {

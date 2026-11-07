@@ -56,6 +56,8 @@ const app = createProbe({
   stateDirectory,
   purchasesPaused,
   research,
+  knownAncestorsEnabled: identity => process.env.PAGESTREAM_KNOWN_ANCESTORS_ENABLED !== '0' &&
+    !(process.env.PAGESTREAM_KNOWN_ANCESTORS_DISABLED_IDENTITIES ?? '').split(',').map(s => s.trim()).includes(identity),
   manifestEnabled: process.env.SPIKE_MANIFEST !== "0",
 });
 const server = http.createServer({ maxHeaderSize: 1024 * 1024 }, app);

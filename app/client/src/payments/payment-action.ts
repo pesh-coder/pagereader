@@ -2,6 +2,7 @@ import { Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import { networkFee } from './payment-cost.js'
 import type { WalletDiagnostic } from './wallet-diagnostic.js'
+import { retainedAncestors, completePaymentProof, compactPaymentProof, type AncestorLookup } from './payment-ancestors.js'
 
 export interface PaymentAttempt {
   identityKey: string
@@ -43,6 +44,7 @@ export async function preparePayment(
   args: Parameters<WalletInterface['createAction']>[0],
   journal: AttemptJournal,
   originator?: string,
+  ancestorLookup?: AncestorLookup,
 ) {
   const attempt = journal.get()
   if (
@@ -68,6 +70,7 @@ export async function preparePayment(
   )
     throw new Error('Missing payment remittance')
   journal.save({ ...attempt, state: 'preparing', walletRequestStarted: true })
+  const ancestors = retainedAncestors(args.options?.knownTxids, ancestorLookup)
   let result
   try {
     result = await wallet.createAction(
@@ -75,7 +78,7 @@ export async function preparePayment(
         ...args,
         options: {
           ...args.options,
-          knownTxids: [],
+          knownTxids: [...ancestors.keys()],
           signAndProcess: false,
           noSend: true,
           returnTXIDOnly: false,
@@ -115,7 +118,7 @@ export async function preparePayment(
   let quotedFeeSats: number | null | undefined
   try {
     journal.save(prepared)
-    const template = Transaction.fromAtomicBEEF(signable.tx)
+    const template = Transaction.fromAtomicBEEF(completePaymentProof(signable.tx, ancestors))
     const fee = networkFee(template)
     quotedFeeSats = fee
     if (fee == null || fee > feeLimit) {
@@ -144,7 +147,8 @@ export async function preparePayment(
       throw new Error(
         'Signed payment proof missing; do not create another payment',
       )
-    const tx = Transaction.fromAtomicBEEF(signed.tx)
+    const complete = completePaymentProof(signed.tx, ancestors)
+    const tx = Transaction.fromAtomicBEEF(complete)
     if (networkFee(tx) !== fee || !sameTemplate(template, tx))
       throw new Error(
         'Signed transaction differs from the checked fee/template; payment remains unsent',
@@ -158,10 +162,11 @@ export async function preparePayment(
       proof: {
         derivationPrefix: remittance.derivationPrefix,
         derivationSuffix: remittance.derivationSuffix,
-        transaction: Utils.toBase64(signed.tx),
+        transaction: Utils.toBase64(complete),
       },
     })
-    return { txid, tx: signed.tx }
+    return { txid, tx: complete, ancestorCount: ancestors.size,
+      transportTx: ancestors.size ? compactPaymentProof(complete, ancestors.keys()) : complete }
   } catch (error) {
     // Only abort before signing begins. An uncertain signed action is retained.
     if (journal.get()?.state === 'prepared') {

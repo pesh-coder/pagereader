@@ -6,7 +6,7 @@ type Sample = {
   page: number; edition: string; identityKey: string | null; network: string | null;
   trigger: 'explicit' | 'recovery'; timingBoundary: 'request-to-visible-frame';
   purchased: boolean; visible: boolean; totalMs?: number; txid?: string;
-  walletCalls: { method: string; ms: number; ok: boolean; code?: string | number; diagnostic?: WalletDiagnostic }[];
+  walletCalls: { method: string; ms: number; ok: boolean; code?: string | number; diagnostic?: WalletDiagnostic; paymentMetrics?: WalletCall['paymentMetrics'] }[];
   http: HttpCall[]; startedAt: string; failed?: boolean;
 }
 export interface TimingRun {
@@ -81,8 +81,13 @@ export class ReadingTimings {
     if (!current || this.clock() - call.ms < current.start) return
     // Reclassify the original error; never export arbitrary diagnostic fields.
     const diagnostic = walletDiagnostic(call.error)
+    const metrics = call.paymentMetrics
+    const safeMetrics = metrics && Number.isInteger(metrics.knownAncestors) && metrics.knownAncestors >= 0 && metrics.knownAncestors <= 32 &&
+      [metrics.proofBytes, metrics.transportBytes].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 16 * 1024 * 1024)
+      ? { knownAncestors: metrics.knownAncestors, proofBytes: metrics.proofBytes, transportBytes: metrics.transportBytes } : undefined
     current.sample.walletCalls.push({ method: call.method, ms: call.ms, ok: call.ok,
       ...(call.error?.code !== undefined ? { code: call.error.code } : {}),
+      ...(safeMetrics ? { paymentMetrics: safeMetrics } : {}),
       ...(diagnostic ? { diagnostic } : {}) })
   }
   http(call: HttpCall) {

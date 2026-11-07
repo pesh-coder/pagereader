@@ -21,6 +21,7 @@ import {
   Utils,
   type WalletInterface,
 } from "@bsv/sdk";
+import { knownPaymentAncestors, retainedPaymentAncestors, restorePaymentAncestors } from "./known-payment-ancestors.js";
 import { config } from "./config.js";
 import { manifest } from "./manifest.js";
 import type { CatalogueBook, Edition } from "./content.js";
@@ -39,6 +40,7 @@ export function createProbe(options: {
   purchasesPaused?: () => boolean;
   research?: boolean;
   rateLimits?: boolean;
+  knownAncestorsEnabled?: (identity: string) => boolean;
 }) {
   const { store, edition } = options;
   const catalogue = options.catalogue ?? [
@@ -330,6 +332,7 @@ export function createProbe(options: {
   app.get(paths("me"), (req, res) =>
     res.json({
       identityKey: identity(req),
+      ...(req.query.ancestors === '1' ? { paymentAncestors: db(() => retainedPaymentAncestors(store, identity(req))) } : {}),
       purchases: db(() => store.purchases(identity(req), editionFor(req).id)),
       bookmark: db(() => store.bookmark(identity(req), editionFor(req).id)),
     }),
@@ -467,6 +470,10 @@ export function createProbe(options: {
       return;
     }
     if (!paymentHeader) {
+      if (options.knownAncestorsEnabled?.(key) !== false) {
+        const known = db(() => knownPaymentAncestors(store, key));
+        if (known) res.set('x-bsv-payment-known-txids', known);
+      }
       const previous = db(() => store.intent(key, edition.id, page));
       if (
         previous?.request_id === requestId &&
@@ -540,7 +547,9 @@ export function createProbe(options: {
             .json({ error: "Existing intent is bound to another transaction" });
           return;
         }
-        db(() => store.submitted(key, edition.id, page, txid, paymentHeader));
+        const completeHeader = db(() => restorePaymentAncestors(store, key, paymentHeader));
+        db(() => store.submitted(key, edition.id, page, txid, completeHeader));
+        req.headers['x-bsv-payment'] = completeHeader;
         context.getStore()!.payment = {
           identity: key,
           edition: edition.id,

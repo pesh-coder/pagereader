@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import {
   P2PKH,
+  Beef,
+  BEEF_V2,
   PrivateKey,
   Script,
   Transaction,
@@ -101,6 +103,55 @@ function fixture(fee = 1) {
   } as unknown as WalletInterface;
   return { tx, wallet, journal, events, args };
 }
+
+test('server-declared retained ancestors shorten wallet work while the saved signed proof stays complete', async () => {
+  const f = fixture()
+  // Synthetic dependency tree beyond the observed depth, never broadcast.
+  let parent = f.tx.inputs[0].sourceTransaction!
+  for (let i = 0; i < 24; i++) parent = new Transaction(1, [{ sourceTransaction: parent,
+    sourceTXID: parent.id('hex'), sourceOutputIndex: 0, unlockingScript: Script.fromHex('00'), sequence: 0xffffffff }],
+    [{ satoshis: 5000, lockingScript: parent.outputs[0].lockingScript }])
+  f.tx.inputs[0].sourceTransaction = parent
+  f.tx.inputs[0].sourceTXID = parent.id('hex')
+  const ancestor = parent.id('hex'), retained = parent.toAtomicBEEF()
+  f.args.options = { knownTxids: [ancestor] }
+  const create = f.wallet.createAction.bind(f.wallet), sign = f.wallet.signAction.bind(f.wallet)
+  f.wallet.createAction = async (args, originator) => {
+    assert.deepEqual(args.options?.knownTxids, [ancestor])
+    const result = await create(args, originator)
+    const beef = Beef.fromBinaryStrict(result.signableTransaction!.tx)
+    beef.version = BEEF_V2
+    beef.makeTxidOnly(ancestor)
+    return { ...result, signableTransaction: { ...result.signableTransaction!, tx: beef.toBinaryAtomic(f.tx.id('hex')) } }
+  }
+  f.wallet.signAction = async (args, originator) => {
+    const result = await sign(args, originator)
+    const beef = Beef.fromBinaryStrict(result.tx!)
+    beef.version = BEEF_V2
+    beef.makeTxidOnly(ancestor)
+    return { ...result, tx: beef.toBinaryAtomic(f.tx.id('hex')) }
+  }
+  const result = await preparePayment(f.wallet, f.args, f.journal, undefined, id => id === ancestor ? retained : undefined)
+  assert.equal(Transaction.fromAtomicBEEF(result.tx!).getFee(), 1)
+  assert.ok(Beef.fromBinaryStrict(result.tx!).txs.length > 24)
+  assert.ok(!Beef.fromBinaryStrict(result.tx!).txs.some(tx => tx.isTxidOnly))
+  assert.ok(Beef.fromBinaryStrict(result.transportTx).txs.some(tx => tx.isTxidOnly))
+  assert.equal(Transaction.fromAtomicBEEF(result.transportTx).id('hex'), result.txid)
+  assert.equal(f.journal.get().proof?.transaction, Buffer.from(result.tx!).toString('base64'))
+  assert.ok(!f.events.includes('broadcast'))
+})
+
+test('unavailable or mismatched retained ancestors never become wallet hints', async () => {
+  const f = fixture()
+  f.args.options = { knownTxids: ['a'.repeat(64), 'b'.repeat(64)] }
+  const create = f.wallet.createAction.bind(f.wallet)
+  f.wallet.createAction = async (args, originator) => {
+    assert.deepEqual(args.options?.knownTxids, [])
+    return create(args, originator)
+  }
+  await preparePayment(f.wallet, f.args, f.journal, undefined, id => id.startsWith('a') ? f.tx.toAtomicBEEF() : undefined)
+  assert.equal(f.journal.get().state, 'signed')
+})
 
 test("signed proof is saved before broadcast; recovery only rebroadcasts the same tx", async () => {
   const f = fixture();

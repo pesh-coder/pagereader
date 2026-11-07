@@ -2,6 +2,7 @@
 import { AuthFetch, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { connectDesktopWallet } from '../bsv/walletAcquisition.js'
 import { config } from './config.js'
+import { retainedAncestors } from './payment-ancestors.js'
 import { networkFee } from './payment-cost.js'
 import { walletDiagnostic, type WalletDiagnostic } from './wallet-diagnostic.js'
 import {
@@ -16,6 +17,7 @@ export interface WalletCall {
   method: string
   ms: number
   ok: boolean
+  paymentMetrics?: { knownAncestors: number; proofBytes: number; transportBytes: number }
   error?: {
     name?: string
     code?: number | string
@@ -90,6 +92,7 @@ export async function openWallet(callbacks: {
   })
   if (network.network !== 'mainnet')
     throw new Error('Reader wallet must be on mainnet')
+  const ancestorCache = new Map<string, number[]>()
   let activeAttemptKey: string | undefined
   const attemptKey = (edition: string, page: number) =>
     `pagestream-payment-v2:${identityKey}:${edition}:${page}`
@@ -183,6 +186,7 @@ export async function openWallet(callbacks: {
         const started = performance.now()
         let ok = false
         let failure: WalletCall['error']
+        let paymentMetrics: WalletCall['paymentMetrics']
         const execute = async () => {
           try {
             if (property === 'createAction' && !callbacks.canSpend())
@@ -194,9 +198,20 @@ export async function openWallet(callbacks: {
                     args[0] as Parameters<WalletInterface['createAction']>[0],
                     journal,
                     args[1] as string | undefined,
+                    txid => {
+                      if (ancestorCache.has(txid)) return ancestorCache.get(txid)
+                      const ledger = JSON.parse(localStorage.getItem('pagestream-spike-spends-v1') ?? '{}') as Record<string, Spend>
+                      const spend = ledger[txid]
+                      if (!spend || spend.identityKey !== identityKey || !spend.edition) return undefined
+                      const saved = getAttempt(spend.edition, spend.page)
+                      return saved?.identityKey === identityKey && saved.state === 'confirmed' && saved.txid === txid && saved.proof
+                        ? Utils.toArray(saved.proof.transaction, 'base64') : undefined
+                    },
                   )
                 : await value.apply(target, args)
             if (property === 'createAction') {
+              paymentMetrics = { knownAncestors: result.ancestorCount ?? 0,
+                proofBytes: result.tx?.length ?? 0, transportBytes: result.transportTx?.length ?? result.tx?.length ?? 0 }
               const txid =
                 result.txid ??
                 (result.tx
@@ -228,7 +243,10 @@ export async function openWallet(callbacks: {
               )
             }
             ok = true
-            return result
+            // Keep full proofs for fees/recovery; use only server-negotiated
+            // compact ancestry for the BRC-105 HTTP submission.
+            return property === 'createAction' && result.transportTx
+              ? { ...result, tx: result.transportTx } : result
           } catch (error) {
             failure = walletError(error)
             throw error
@@ -240,6 +258,7 @@ export async function openWallet(callbacks: {
                   : String(property),
               ms: performance.now() - started,
               ok,
+              ...(paymentMetrics ? { paymentMetrics } : {}),
               ...(failure ? { error: failure } : {}),
             })
           }
@@ -295,6 +314,13 @@ export async function openWallet(callbacks: {
   return {
     auth,
     identityKey,
+    retainPaymentAncestors(values: { txid: string; transaction: string }[]) {
+      ancestorCache.clear()
+      for (const value of values.slice(0, 8)) {
+        const valid = retainedAncestors([value.txid], () => Utils.toArray(value.transaction, 'base64'))
+        for (const [id, raw] of valid) ancestorCache.set(id, raw)
+      }
+    },
     getAttempt,
     version: version.version,
     network: 'mainnet' as const,
