@@ -35,6 +35,7 @@ export function createProbe(options: {
   catalogue?: CatalogueBook[];
   wallet?: WalletInterface;
   serverIdentity?: string;
+  receiverDiagnostics?: (tx: number[]) => Promise<unknown>;
   manifestEnabled?: boolean;
   stateDirectory?: string;
   purchasesPaused?: () => boolean;
@@ -156,6 +157,10 @@ export function createProbe(options: {
       serverWalletCalls: t.serverWalletCalls,
       walletInternalizeMs: t.walletInternalizeMs,
       receiptCommitMs: t.receiptCommitMs,
+      rootMs: t.rootMs ?? 0,
+      rootCalls: t.rootCalls ?? 0,
+      storageMs: t.storageMs ?? 0,
+      storageCalls: t.storageCalls ?? 0,
     };
     // Durations overlap: wallet includes authentication/internalization calls;
     // receipt commit is part of DB time. Do not sum these as exclusive phases.
@@ -166,6 +171,8 @@ export function createProbe(options: {
         ["auth", result.authMs],
         ["wallet", result.serverWalletMs],
         ["internalize", result.walletInternalizeMs],
+        ["roots", result.rootMs],
+        ["storage", result.storageMs],
         ["receipt", result.receiptCommitMs],
         ["db", result.dbMs],
       ]
@@ -282,6 +289,7 @@ export function createProbe(options: {
     app.use((req, res, next) => {
       if (
         req.path !== "/.well-known/auth" &&
+        !/^\/api\/receiver-latency\/[a-f0-9]{64}$/.test(req.path) &&
         !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+)$/.test(
           req.path,
         )
@@ -329,6 +337,31 @@ export function createProbe(options: {
     next();
   });
   const identity = (req: Request) => (req as AuthRequest).auth!.identityKey;
+  // Operator identity only, existing accepted proof only. This path cannot
+  // reserve, recover, accept, broadcast or create a wallet payment.
+  let diagnosticBusy = false;
+  const diagnosticLimit = requestLimit({ limit: 4, windowMs: 60000, key: () => 'receiver', maxKeys: 1 });
+  app.get('/api/receiver-latency/:txid', (req, res, next) => {
+    if (!options.receiverDiagnostics || !options.serverIdentity || identity(req) !== options.serverIdentity) {
+      res.sendStatus(403); return;
+    }
+    diagnosticLimit(req, res, next);
+  }, async (req, res) => {
+    const txid = String(req.params.txid);
+    const saved = /^[a-f0-9]{64}$/.test(txid) ? store.proof(txid) : undefined;
+    if (!saved || store.owned(saved.identity, saved.edition, saved.page)?.txid !== txid) {
+      res.sendStatus(404); return;
+    }
+    if (diagnosticBusy) { res.sendStatus(429); return; }
+    diagnosticBusy = true;
+    try {
+      const proof = JSON.parse(saved.proof);
+      const result = await options.receiverDiagnostics!(Utils.toArray(proof.transaction, 'base64'));
+      res.json({ txid, result });
+    } catch {
+      res.status(502).json({ error: 'Read-only receiver diagnostic failed; no payment was attempted' });
+    } finally { diagnosticBusy = false; }
+  });
   app.get(paths("me"), (req, res) =>
     res.json({
       identityKey: identity(req),

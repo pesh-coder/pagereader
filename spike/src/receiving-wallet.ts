@@ -2,6 +2,7 @@ import type { WalletInterface } from "@bsv/sdk";
 import { assertBoundPayment, type PaymentBinding } from "./payment-contract.js";
 import { networkFee } from "./payment-cost.js";
 import type { Store } from "./store.js";
+import { measureReceiver } from "./receiver-profile.js";
 
 export interface RequestTiming {
   start: number;
@@ -13,6 +14,10 @@ export interface RequestTiming {
   serverWalletCalls: number;
   walletInternalizeMs: number;
   receiptCommitMs: number;
+  rootMs?: number;
+  rootCalls?: number;
+  storageMs?: number;
+  storageCalls?: number;
   payment?: PaymentBinding;
   acceptedTxid?: string;
 }
@@ -46,7 +51,12 @@ export function receivingWallet(
             const callStarted = performance.now();
             let result;
             try {
-              result = await target.internalizeAction(...args);
+              result = await measureReceiver(() => target.internalizeAction(...args), metrics => {
+                current.rootMs = (current.rootMs ?? 0) + metrics.rootMs;
+                current.rootCalls = (current.rootCalls ?? 0) + metrics.rootCalls;
+                current.storageMs = (current.storageMs ?? 0) + metrics.storageMs;
+                current.storageCalls = (current.storageCalls ?? 0) + metrics.storageCalls;
+              });
             } finally {
               const ms = performance.now() - callStarted;
               current.serverWalletMs += ms;

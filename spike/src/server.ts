@@ -9,6 +9,7 @@ import { loadEdition, loadCatalogue } from "./content.js";
 import { Store } from "./store.js";
 import { createLocalWalletManifest } from "./local-wallet-manifest.js";
 import { purchaseGate } from "./purchase-gate.js";
+import { instrumentReceiver, inspectReceiver } from "./receiver-profile.js";
 
 if ((process.env.BSV_NETWORK ?? "main") !== "main")
   throw new Error("This spike is mainnet only");
@@ -32,15 +33,19 @@ if (
 await mkdir(stateDirectory, { recursive: true });
 let wallet: WalletInterface | undefined;
 let serverIdentity: string | undefined;
+let receiverDiagnostics: ((tx: number[]) => Promise<unknown>) | undefined;
 if (process.env.SERVER_PRIVATE_KEY) {
   // Official SDK parsing and wallet setup; no custom key derivation or signing.
   const rootKey = PrivateKey.fromString(process.env.SERVER_PRIVATE_KEY);
-  wallet = await SetupClient.createWalletClientNoEnv({
+  const receiver = await SetupClient.createWalletClientNoEnv({
     chain: "main",
     rootKeyHex: rootKey.toHex(),
     storageUrl:
       process.env.WALLET_STORAGE_URL ?? "https://storage.babbage.systems",
   });
+  instrumentReceiver(receiver);
+  receiverDiagnostics = tx => inspectReceiver(receiver, tx);
+  wallet = receiver;
   serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey;
 }
 const store = new Store(join(stateDirectory, "spike.sqlite"));
@@ -53,6 +58,7 @@ const app = createProbe({
   catalogue: loadCatalogue(),
   wallet,
   serverIdentity,
+  receiverDiagnostics,
   stateDirectory,
   purchasesPaused,
   research,
