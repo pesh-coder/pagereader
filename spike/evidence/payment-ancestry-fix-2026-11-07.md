@@ -13,14 +13,14 @@ Implemented after the [native capture](phone-paid-run-2026-11-07.md) confirmed B
 
 ## Validation and limitations
 
-105 tests pass, including a synthetic 25-ancestor signing case, 16 consecutive SDK/AuthFetch chained payments through the middleware, complete durable proofs, compact payload bounds, identity isolation, disabled-hint fallback, fee checks and recovery guards. Client build/lint and spike type checks pass. These fixtures do not prove native wallet performance. The published mobile toolbox 2.14.3 implementation supports the knownTxids path; the physical-phone pilot remains pending.
+105 tests pass, including a synthetic 25-ancestor signing case, 16 consecutive SDK/AuthFetch chained payments through the middleware, complete durable proofs, compact payload bounds, identity isolation, disabled-hint fallback, fee checks and recovery guards. Client build/lint and spike type checks pass. These fixtures do not prove native wallet performance. The published mobile toolbox 2.14.3 implementation supports the knownTxids path; the physical-phone pilot now confirms eight known ancestors and a successful page-33 purchase. Sustained reading remains unverified.
 
 Read-only verification of an existing received proof took 544/383/375 ms with the default toolbox header provider, versus 593/288/302 ms with the SDK WhatsOnChain alternative, from the agent environment. This is not a hosted payment benchmark and does not justify a provider switch. The default remains unchanged.
 
-The 6.51-second native median and 500-ms miss remain the latest measured results. Receiver wallet acceptance took about two seconds and is not claimed fixed. No paid prefetch, early delivery, weakened proof checks or wallet/key/storage migration was introduced.
+The earlier 13-turn native median was 6.51 seconds. The later one-page pilot took 7.073 seconds; the 500-ms target remains missed. Receiver wallet acceptance took about two seconds and is not claimed fixed. No paid prefetch, early delivery, weakened proof checks or wallet/key/storage migration was introduced.
 
 ## Rollback and next check
 
 Disable new hints with PAGESTREAM_KNOWN_ANCESTORS_ENABLED=0, or for comma-separated public identities with PAGESTREAM_KNOWN_ANCESTORS_DISABLED_IDENTITIES. Keep restoration deployed for in-flight payments; do not roll back to a binary unable to resolve an already-declared ancestor. Retain the persistent proof database.
 
-After deployment, refresh and resume owned page 32. Next checks the original page-33 attempt read-only. When an explicit retry is offered, start a new capture from the owned page and confirm Recording. Retry page 33 only, maximum 28 sats, then stop/export. Do not start another cohort or replace an uncertain payment. Check one accepted receipt, ancestor count above zero, smaller transport, correct spend and new timings. This is not a qualifying 20-turn p95.
+The bounded page-33 pilot is complete: one accepted 28-sat purchase, eight known ancestors, transport reduced from 3,612 to 302 bytes, book total 868 sats. It took 7.073 seconds, including 2.434 seconds in receiver acceptance. This is not a qualifying 20-turn p95 or proof of sustained depth-limit avoidance. Preserve the capture and profile receiver verification/storage before another paid cohort. [Pilot evidence](phone-page33-pilot-2026-11-07.md).
