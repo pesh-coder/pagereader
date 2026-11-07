@@ -8,6 +8,8 @@ import {
   type PageFeeApproval,
 } from './reader/gateway'
 import { spendingLabel, summarizeSpending } from './reader/spending'
+import { ReadingTimings } from './reader/timings'
+import { TimingPanel } from './reader/components/TimingPanel'
 import { Panel } from './reader/components/Panel'
 import { WalletGuidance } from './reader/components/WalletGuidance'
 import { WalletMenu } from './reader/components/WalletMenu'
@@ -17,14 +19,17 @@ import { SpendingPanel } from './reader/components/SpendingPanel'
 
 export default function App() {
   const [, invalidate] = useState(0)
+  const [timings] = useState(() => new ReadingTimings(localStorage))
   const [gateway] = useState(() =>
-    createReaderGateway(() => invalidate((n) => n + 1)),
+    createReaderGateway(() => invalidate((n) => n + 1), undefined, {
+      wallet: call => timings.wallet(call), http: call => timings.http(call),
+    }),
   )
   const [books, setBooks] = useState<Book[]>([])
   const [book, setBook] = useState<Book | null>(null)
   const [page, setPage] = useState<ReaderPage | null>(null)
   const [panel, setPanel] = useState<
-    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | null
+    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | 'timings' | null
   >(null)
   const [target, setTarget] = useState(3)
   const [busy, setBusy] = useState(false)
@@ -102,6 +107,14 @@ export default function App() {
       document.removeEventListener('visibilitychange', save)
     }
   }, [book, page, gateway])
+  useEffect(() => {
+    const stop = () => timings.stop('Reader closed or reloaded during capture.')
+    window.addEventListener('pagehide', stop)
+    return () => window.removeEventListener('pagehide', stop)
+  }, [timings])
+  function timingContext(edition: string) {
+    return { identityKey: gateway.identity(), network: gateway.network(), edition, protocolVersion: gateway.walletVersion() }
+  }
   async function turn(selected: Book, number: number, recoveryOnly = false, approval?: PageFeeApproval) {
     if (lock.current) return
     lock.current = true
@@ -113,6 +126,7 @@ export default function App() {
       setErrorAction(null)
     }
     setPanel(null)
+    const timingToken = timings.begin(number, selected.editionId ?? '', recoveryOnly)
     try {
       const body = await gateway.page(selected, number, recoveryOnly, approval)
       setError('')
@@ -123,10 +137,13 @@ export default function App() {
       setPage(body)
       setFailedPage(null)
       window.scrollTo(0, 0)
-      requestAnimationFrame(() =>
-        article.current?.focus({ preventScroll: true }),
-      )
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        article.current?.focus({ preventScroll: true })
+        timings.finish(timingToken, body.purchase?.txid, timingContext(selected.editionId ?? ''), gateway.receipts(),
+          document.visibilityState === 'visible' && article.current?.getAttribute('aria-label') === `${selected.title}, page ${body.page}`)
+      }))
     } catch (failure) {
+      timings.fail(timingToken)
       setFeeApproval(failure instanceof ReaderError ? failure.feeApproval ?? null : null)
       setPaymentDetails(
         failure instanceof ReaderError ? failure.details ?? [] : [],
@@ -314,11 +331,13 @@ export default function App() {
               Aa
             </button>
             <WalletMenu
+              timings={() => setPanel('timings')}
               identity={gateway.identity()}
               version={gateway.walletVersion()}
               busy={busy}
               connect={() => setPanel('wallet')}
               disconnect={() => {
+                timings.stop('Wallet disconnected during capture.')
                 gateway.disconnect()
                 setExplained(false)
                 setPage((current) =>
@@ -536,6 +555,12 @@ export default function App() {
             </button>
           </nav>
         </>
+      )}
+      {panel === 'timings' && (
+        <TimingPanel timings={timings} close={close} start={(name, version) => {
+          if (busy || !book || !page || !owns(page.page)) throw new Error('Open an owned page and wait for it to finish loading first.')
+          timings.start(name, version, timingContext(book.editionId ?? ''), location.origin)
+        }} />
       )}
       {panel === 'appearance' && (
         <Panel title="Text settings" close={close}>

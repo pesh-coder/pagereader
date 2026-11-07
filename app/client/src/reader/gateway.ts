@@ -1,5 +1,5 @@
 import { config } from '../payments/config.js'
-import type { Spend } from '../payments/wallet-client.js'
+import type { Spend, WalletCall, HttpCall } from '../payments/wallet-client.js'
 import { savedBookmark, saveDisplayedBookmark } from './bookmarks.js'
 
 export { config }
@@ -66,6 +66,7 @@ export interface ReaderGateway {
   identity(): string | null
   historyState(): HistoryState
   walletVersion(): string | null
+  network(): string | null
   connect(book?: Book): Promise<void>
   disconnect(): void
   approveReadingFees(): void
@@ -97,6 +98,7 @@ async function json<T>(response: Response): Promise<T> {
 export function createReaderGateway(
   changed: () => void,
   walletOpener?: OpenWallet,
+  observer?: { wallet(call: WalletCall): void; http(call: HttpCall): void },
 ): ReaderGateway {
   let wallet:
     | Awaited<
@@ -217,11 +219,13 @@ export function createReaderGateway(
       wallet = await openWallet({
         call: (call) => {
           console.debug('Wallet timing', call)
+          try { observer?.wallet(call) } catch { /* Diagnostics cannot interrupt payments. */ }
           if (!call.ok && call.method !== 'page payment workflow')
             lastWalletFailure = { method: call.method, code: call.error?.code }
         },
         http: (http) => {
           console.debug('HTTP timing', http)
+          try { observer?.http(http) } catch { /* Diagnostics cannot interrupt payments. */ }
           lastHttp = { path: http.path, status: http.status }
         },
         spend: saveSpend,
@@ -264,6 +268,7 @@ export function createReaderGateway(
     hasIdentity: () => Boolean(wallet),
     identity: () => wallet?.identityKey ?? null,
     walletVersion: () => wallet?.version ?? null,
+    network: () => wallet?.network ?? null,
     historyState: () => history,
     async connect(book) {
       allowSpend = false
