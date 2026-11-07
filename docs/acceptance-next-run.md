@@ -13,19 +13,13 @@ Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Orig
 | 5 | Complete native correctness/stopping tests | Underpayment, remaining replay cases, original-proof lost-response recovery and concurrent attempts. Owner reports no new purchase after closing/resuming; hosted cross-identity proof rejection also passed. An already-submitted transaction may finish. |
 | 6 | Rehearse and share | Six-step mainnet demonstration in about 90 seconds; final short learnings and confirmed team delivery. |
 
-## Next device action
+## Current result and next work
 
-**Phone owned-page resume passed:** on 7 November the owner confirmed the same 28-sat book total after reopening/resuming. The two local wallet Activity statuses were not supplied; mining is independently confirmed, but UI proof refresh is not assumed complete.
+The owner supplied a stopped native Browser 1.6.3 timing export. Page 20 recovered; pages 20?32 are 13 new accepted purchases. The 840-sat ledger matches the screenshot (150 prices + 690 fees). Page 33 fails in unsigned createAction with the confirmed payment-proof depth limit of 12. Successful turns take 5.75?7.61 seconds, median 6.51 seconds. [Full analysis](../spike/evidence/phone-paid-run-2026-11-07.md).
 
-**Phone free previews passed:** the owner logged out of the app connection and confirmed Holmes pages 1 and 2 both load without errors or a wallet prompt. C1 is closed.
+**No further paid cohort yet.** Preserve the original page-33 attempt and the raw capture. The next work is engineering: establish supported wallet proof refresh/coin selection that avoids the depth limit, and profile the receiver's 1.76?2.10-second wallet acceptance call plus the phone's 1.20?1.60-second payment workflow. Do not weaken verification, alter the installed wallet, auto-replace a payment or use waiting for mining as a claimed 500-ms fix. A maintainer message is prepared locally but has not been sent. Only resume native paid cohorts after a supported fix/design decision and explicit cost bounds.
 
-**Page 4 completed:** after the 1-sat cap aborted the unsigned action, the owner approved up to 28 sats and reports page 4 opened for 28 sats in less than a second. Receiver proof confirms 5 sats to seller and 23 sats fee. Native prompt count and the expected 56-sat book total are still to be checked. This rough timing is not a qualifying p95 sample.
-
-**Phone repeat turns and stopping check passed at the reported scope:** the owner confirmed pages 5 and 6 opened without native wallet approvals or another app fee approval. Continue reading created no new purchase after the requested stopping check. The reply did not supply a final total, resumed page or measured close duration; none is inferred. Session expiry and monthly allowance consumption are separate, still-open checks.
-
-**Current blocker: page 20.** The first phone cohort reached owned page 19 and 476 sats, but capture had been attempted from Library and did not start. Page 20 failed during createAction with WERR_INVALID_OPERATION; its original preparing/challenged attempt must be reconciled before another purchase. Do not rerun pages 7?19: they are already owned and cannot count as new paid samples. The latest receiving-wallet payment is mined, despite stale unproven labels in the receiving wallet. The exact phone error cause and unsigned-action state remain unconfirmed. The owner now reports all Activity entries completed. A guarded unsigned-only reconciliation is implemented, pending its native check. Refresh the app, resume owned page 19 and tap Next once: the saved attempt is checked read-only before any purchase offer. Report the check result. Do not start another paid cohort or reset wallet data.
-
-**Capture UI corrected:** Start is disabled until an owned page is open and an installed version is entered. The reader header now shows Recording and the paid sample count. Do not begin another paid cohort until the page-20 failure is resolved and this indicator is visibly active. Preserve this failed cohort as functional evidence even though no timing file was created. A fresh 20-page cohort needs a newly agreed page range/bound after recovery, not an automatic restart of the previous run. Confirm Desktop's 100 sats/kB setting before its separate native run.
+Phone free previews, owned-page resume, silent native approvals on pages 5/6 and the reported no-new-purchase stopping check remain narrow passes. Session scope, allowance enforcement, same-identity cross-device resume, remaining fault/race checks and the final rehearsal/sharing remain open.
 
 ## Historical device evidence, 2 November
 
