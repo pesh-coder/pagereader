@@ -1,8 +1,10 @@
 ﻿# Pagestream: acceptance and remaining work
 
-Updated 2026-11-02. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. The original acceptance targets are retained, including where the observed wallet behavior conflicts with them.
+Updated 2026-11-07. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. The original acceptance targets are retained, including where the observed wallet behavior conflicts with them.
 
-**Agreed pricing, 2026-11-02:** keep the seller's price at 5 sats per new page; the reader pays miner fees on top, with the total visible. A successful 1-sat-fee Desktop purchase does not establish prompt mining. Use supported processor fee policy for acceptance testing rather than lowering fees merely to reach a 6-sat debit. The user was advised to configure Desktop to 100 sats/kB after a successful current policy check and restart; that device change has not been observed or performed by the agent. Browser quoted a 23-sat fee and the user reports page 3 opened with 28 sats in the reader counter. Full wallet/receipt reconciliation remains open. The app still defaults to a 1-sat fee cap and offers an explicit higher-fee approval per page attempt; a suitable bounded fee-consent policy is needed for seamless turns.
+**Current checkpoint:** all four previously unproven phone/funding transactions now have 701 confirmations on WhatsOnChain and `MINED` on Arcade. The two phone debit proof endpoints return 200. The mining blocker is closed. All 16 hosted public previews passed wallet-free HTTP checks; the physical-phone disconnected test is still open. Source/schema audit closes C7 (no account), and actual mainnet payments on both wallets close C9. These narrow passes do not complete session approval, paid latency, same-identity resume or the final demo. [Evidence](../spike/evidence/acceptance-check-2026-11-07.md).
+
+**Agreed pricing:** keep the seller's price at 5 sats per new page; the reader pays miner fees on top, with the total visible. Use the maintainer-recommended 100 sats/kB for this POC; a processor's lower acceptance minimum does not establish timely mining. Desktop returned to 250 after restoration and the user was advised to set 100 again and restart; that latest setting has not been observed by the agent. Baseline wallet/reader debits match: Desktop 74 sats, phone page 28 sats, plus a separate phone grant of 199. Broader pending/recovery accounting is still open. The app defaults to a 1-sat fee cap and offers an explicit higher-fee approval per page attempt; a suitable bounded fee-consent policy is still needed for seamless turns.
 
 **Approval requirement retained, 2026-11-02:** the user reiterated the original brief. Keep one wallet approval per session and a wallet-managed session limit. The observed 5,000-sat monthly allowance is not accepted as a replacement; C2 remains unmet. Closing a tab stops app purchases but does not establish expiry or revocation of a saved wallet permission. Do not substitute a server-side/sessionStorage budget or a monthly grant for native session behavior. Investigate supported wallet session controls within the install-only wallet scope; if unavailable, report the stack gap rather than modify wallets or mark acceptance complete. The independent paid-page p95 target remains 500 ms.
 
@@ -15,7 +17,7 @@ The [senior review R1 checklist](review-feedback-r1.md) records the reader, reco
 | Requirement | Current result |
 |---|---|
 | Six-step story live in about 90 seconds, mainnet | Not rehearsed end to end |
-| Desktop and Browser, including cross-device bookmark | Desktop purchases and hosted owned-page recovery observed; user reports Browser page 3 opened with a 28-sat reader total. Wallet-debit reconciliation and same-identity cross-device resume remain open |
+| Desktop and Browser, including cross-device bookmark | Purchases and baseline debit reconciliation work on both; phone purchase is now mined. Same-identity cross-device resume and subsequent paid turns remain open |
 | Wallet prompts once per session | Not met: observed saved grant is monthly, with initial separate prompts; one subsequent Desktop turn was prompt-free |
 | Underpaid/replayed requests refused | Local coverage passes; existing-proof live-local replay checks pass; full native negative cases remain |
 | Learnings written and shared | Rewritten for review; repository publication was authorized previously, but team delivery/receipt is not confirmed |
@@ -32,9 +34,9 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 | C4 Accurate always-visible spend | UNRESOLVED | Baseline comparison passes: Desktop wallet matches 3 page payments totaling 74; phone wallet debit matches the 28-sat reader total, with a separate 199-sat grant. Phone funding/debits reconcile to 6,773. Broader uncertain-payment and same-identity cross-device accounting remain open; wallet allowance accounting is tracked under C2. Neither recorded debit nor server acceptance proves mining. |
 | C5 Underpay 400; wrong-page/identity replay 409 | UNRESOLVED | Local tests pass; existing-proof wrong-page/edition live-local requests returned 409. Native mainnet underpayment/cross-identity evidence remains. |
 | C6 Exactly one charge per page, including lost delivery/two tabs/two devices | UNRESOLVED | Durable proof recovery and local fault/race coverage pass. The local receiver fixture now recovers after acceptance/receipt failure and SQLite restart using the original server proof. Actual receiving-wallet duplicate-import behavior, newly charged live lost delivery and native races remain. |
-| C7 No signup/email/password/card/profile | UNRESOLVED | Source/schema use identity keys without account fields. Complete two-device flow audit remains. |
+| C7 No signup/email/password/card/profile | PASS | Active reader entry, components, wallet helper, payment routes and SQLite schema audited on 7 November; only the wallet's public identity keys purchases/bookmarks, with no account forms or fields. Both existing device purchase observations support the source audit. |
 | C8 Same identity and displayed bookmark on phone | UNRESOLVED | Desktop Resume and hosted owned recovery work without purchasing. User confirms Desktop and Browser have different identities and accepts independent testing. That does not complete same-identity cross-device resume. |
-| C9 Mainnet on both wallets | UNRESOLVED | Three Desktop page receipts verified; Browser page 3 reported open with a 28-sat reader total. Complete native wallet/receipt reconciliation and repeat turns remain. |
+| C9 Mainnet on both wallets | PASS | Three Desktop mainnet purchases previously verified; Browser page 3 opens and its matching 28-sat transaction is now independently confirmed mined. This closes mainnet use on both, not the separate prompt, timing, race or cross-device requirements. |
 | C10 Six-step story in ~90 seconds | UNRESOLVED | HTTPS reading is hosted; phone wallet/shortcut checks, leave-mid-chapter observation and timed rehearsal remain. |
 | C11 Learnings written/shared | UNRESOLVED | Short note now written; team sharing not confirmed. |
 
@@ -50,7 +52,7 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 
 **Live checks still needed**
 
-- Browser is funded and its identity differs from Desktop's. Reconcile the reported phone page purchase, test owned-page rereading/reopen, then establish supported identity continuity for the cross-device story.
+- Browser's existing page purchase, debit and mining status are reconciled; same-wallet owned-page reopening was observed. Refresh the local wallet proof/status, then establish supported identity continuity for the cross-device story. Current identities differ.
 - Retest wallet-free previews on the phone; observe prompt count, scope, cost and allowance consumption on both wallets.
 - Collect 20 distinct paid-page samples per wallet, preserving slow/failed samples; verify underpayment, replay, lost response and concurrent purchases.
 - Close the tab mid-chapter and confirm no additional purchases start. An already-submitted transaction may finish after close; closing cannot cancel it.
@@ -66,7 +68,7 @@ These are the remaining POC requirements, not a request to add accounts, wallet 
 - **Receiving identity:** the hosted manifest counterparty matched the original local public identity in the hosted recovery evidence. Deployed private-key equality was not independently inspected; do not describe public metadata as that proof.
 - **Costs:** 318 sats across five known debit transactions explains the recorded page/permission amounts: pages 74, grants 244. There is no separate unexplained amount in that reconciliation; it does not prove the complete wallet or cross-device history.
 - **Allowance:** `walletLimitSats: 5000` requests the manifest allowance; the observed grant is wallet-managed and monthly. It is not a server-side session cap.
-- **Tests:** latest full `npm.cmd test` in `spike` on 2026-10-29: **82 passed, 0 failed**, including per-attempt higher-fee consent. Client build/lint passed. Earlier counts are historical. No tests were rerun for this documentation-only update; local tests do not complete live acceptance.
+- **Tests:** latest full `npm.cmd test` in `spike` on 2026-11-02: **84 passed, 0 failed**, including broadcast-result preservation and original-proof diagnostics. Type checks and client build/lint passed. Earlier counts are historical. No tests were rerun for this documentation/read-only update; local tests do not complete live acceptance.
 - **Hosting terms/cost:** the recorded decision was a private own-wallet POC on existing Railway Hobby, not a guaranteed $0 deployment or a demonstrated Vercel policy exception. The repository does not establish plan compliance; no new provider-policy determination is claimed here. See the [setup guide](../deploy/vercel-railway.md).
 - **Upstream fix:** PR #124 release/legacy behavior is described as of the recorded investigation. Current release status was not rechecked in this documentation update.
 

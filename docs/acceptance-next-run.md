@@ -1,19 +1,23 @@
 # Pagestream: remaining acceptance and next run
 
-Updated 2026-11-02. Seller price remains 5 sats; miner fees are additional. Original session approval and 500-ms targets remain unchanged. No new page payment was made during this investigation.
+Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Original session approval and 500-ms targets remain unchanged. No new page payment was made during this investigation.
 
-**Current blocker investigated:** both phone debits spend unconfirmed Desktop funding transfers that each paid a 1-sat fee. The actual processor reports `SEEN_MULTIPLE_NODES`; original page broadcast history was recovered. This is a mining/dependency issue, not evidence of an unsent page payment. The broadcast-result handling gap is fixed and tested, while a supported recovery for the original funding chains remains open. [Findings and exact dependencies](../spike/evidence/phone-transaction-status-2026-11-02.md), [prepared maintainer report](phone-payment-recovery-report.md).
+**Completed today:** both phone debits and both Desktop funding transfers now show **701 confirmations** on WhatsOnChain and `MINED` on Arcade. Mining-proof endpoints for the two phone debits return 200. The existing mining blocker is closed; a wallet UI refresh may still be needed. All 16 hosted public previews passed without wallet/authentication, and the active reader's no-account audit passed (C7). Mainnet payments have been demonstrated on both wallets (C9); this does not complete the full device story. [Current evidence](../spike/evidence/acceptance-check-2026-11-07.md). The [2 November investigation](../spike/evidence/phone-transaction-status-2026-11-02.md) remains historical evidence of the funding delay.
 
 | Order | Remaining work | Evidence needed to finish |
 |---|---|---|
-| 1 | Recorded spending comparison: complete for supplied records | Desktop matched 3 payments totaling 74 sats. Phone wallet shows one 28-sat page debit matching the reader, plus a separate 199-sat permission grant. Phone owned-page resume retains the same total. Mining/proof status is a separate follow-up, still open. |
+| 1 | Phone and cross-device reading | Refresh existing wallet statuses, resume owned page 3 at the same 28-sat total, retest disconnected-wallet previews, then establish supported same-identity resume. Different existing identities do not pass the original cross-device story. |
 | 2 | Resolve one native approval per session | Establish a supported wallet session budget, correct price-plus-fee allowance consumption and silent subsequent purchases. Current monthly grant and per-page app fee exceptions do not pass. No wallet modification or app/server substitute for the wallet limit. |
 | 3 | Diagnose and improve paid-turn latency | Fresh stage timings, a demonstrated improvement, then 20 distinct new paid turns per wallet with p95 <=500 ms. Include cold/slow/failed attempts. |
-| 4 | Finish phone/cross-device story | Final wallet-disconnected preview test; supported same-identity resume on the other device, correct bookmark and no duplicate payment. Current Desktop/Browser identities differ. |
+| 4 | Complete spending/recovery accounting | Baseline comparison is complete: Desktop 74 sats; phone page 28 sats plus separate grant 199 sats. Verify pending, failed/recovered and cross-device cases without duplicate or omitted costs. |
 | 5 | Complete native correctness/stopping tests | Underpayment/replay refusal, original-proof lost-response recovery, concurrent attempts and close-tab observation. An already-submitted transaction may finish. |
 | 6 | Rehearse and share | Six-step mainnet demonstration in about 90 seconds; final short learnings and confirmed team delivery. |
 
-## First device run: owned-page verification
+## Next device action
+
+On the phone, refresh the existing 28-sat page payment and 199-sat grant in wallet Activity; mining proofs are now available. Reopen Pagestream and use Continue reading for the owned Holmes page 3. Record both wallet statuses, the displayed page and the unchanged 28-sat book total. This check creates no purchase. Confirm Desktop's saved custom rate is 100 sats/kB before a later, explicitly budgeted paid run; restoring Desktop previously reset it to 250.
+
+## Historical device evidence, 2 November
 
 The user confirms BSV Desktop has restarted after the fee-setting step. Desktop's reader shows page 3 at 62 sats, page 5 at 6 sats and page 6 at 6 sats: 15 sats in page prices plus 59 sats in fees, totaling 74. The supplied result explicitly says **Wallet totals checked for 3 payments**, confirming the current Desktop wallet-cost match. Individual mining statuses and a fresh Desktop reopen/no-new-debit observation were not supplied. The configured rate has not been independently read back. A rate change applies to future transactions; it does not reprice older receipts.
 

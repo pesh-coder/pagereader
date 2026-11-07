@@ -5,11 +5,11 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 ## Status at a glance
 
 - Built: eight complete books, wallet-free previews, paid delivery/recovery, identity-based bookmarks and a visible page-spend counter.
-- Observed: three Desktop mainnet purchases, one prompt-free paid turn, and hosted recovery of owned pages and their 74-sat total.
-- Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-10-27: mainnet, payment-ready, purchases enabled.
-- **The POC is not complete:** phone spending reconciliation, cross-device resume, approval behavior, paid-page speed and the timed six-step demo remain open.
+- Observed: three Desktop mainnet purchases totaling 74 sats and one phone purchase totaling 28 sats, with matching recorded debits. Both phone debits and their funding transfers are now mined; the earlier mining blocker is closed.
+- Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-11-07: mainnet, payment-ready, purchases enabled. All 16 public previews passed wallet-free HTTP checks.
+- **The POC is not complete:** same-identity cross-device resume, session approval, paid-page speed, remaining live fault/stopping tests and the timed six-step demo remain open.
 - The [acceptance register and remaining work](docs/project-requirements-status.md) separates implementation gaps from live checks. Team sharing is also unconfirmed.
-- The [senior review changes](docs/review-feedback-r1.md) are deployed. The user reports phone page 3 opened with 28 sats in the counter; native wallet reconciliation and repeat paid turns remain open.
+- The [senior review changes](docs/review-feedback-r1.md) are deployed. Phone page 3 opened and resumes at 28 sats; repeat paid turns and broader pending/recovery accounting remain open.
 
 **Pricing decision, 2026-11-02:** the seller receives 5 sats per page and the reader pays miner fees on top. Use the maintainer-recommended **100 sats/kB** for this POC; a processor accepting a lower rate does not mean miners will include it promptly. Desktop returned to 250 sats/kB after restoration, so the custom rate needs setting to 100 again; 250 is higher, not the cause of the earlier low-fee delay. A 5,000-sat monthly allowance can remove repeated wallet approvals, but it does not prove 500-ms page turns or satisfy the original per-session requirement. The current app's per-page higher-fee approval is still a testing workaround.
 
@@ -38,7 +38,7 @@ The [actual schema](spike/src/store.ts):
 
 No email, password, card or profile fields exist. `edition` identifies a fixed version of a book's pages. A purchase row means “this identity owns page 6 of this edition.”
 
-The server has a persistent wallet-toolbox receiving wallet; the scaffold's `ProtoWallet` alone is not that receiver. **Continue reading** retrieves ownership and the last displayed bookmark without buying anything. Desktop recovery works; matching Desktop/Browser identities and phone resume are unverified.
+The server has a persistent wallet-toolbox receiving wallet; the scaffold's `ProtoWallet` alone is not that receiver. **Continue reading** retrieves ownership and the last displayed bookmark without buying anything. Desktop recovery and same-wallet phone resume work; matching Desktop/Browser identities for cross-device resume is unverified. The active reader's no-account audit passed on 7 November.
 
 ## 2. How a page gets paid
 
@@ -69,7 +69,7 @@ The counter includes recorded page prices and fees once per transaction; unknown
 
 **Why the phone payments became stuck:** we lowered Desktop to 1 sat/kB to reduce page costs. That was a mistake for the working setup: we treated the processor's minimum accepted rate as suitable for reliable mining. Desktop then funded the phone with two transfers paying only 1 sat each (about 4 sats/kB for their actual size). The phone's **28-sat page debit** and **199-sat permission grant** paid around 100 sats/kB themselves, but spend those unmined funding transfers. The maintainer confirmed that the Desktop parents are holding up the Browser payments; Browser does not inherit Desktop's fee setting, it inherits the dependency on those funds.
 
-Arcade is the wallet's broadcast processor, separate from the WhatsOnChain explorer. Its `SEEN_MULTIPLE_NODES` status means the transactions were seen on the network, not mined. Changing Desktop to 100 sats/kB affects future transactions and does not repair the existing transfers. Recovery remains open; do not buy the page again to fix it. The client now checks and saves each original transaction's broadcast result instead of ignoring failed or missing results. [Investigation](spike/evidence/phone-transaction-status-2026-11-02.md).
+Arcade is the wallet's broadcast processor, separate from the WhatsOnChain explorer. Its `SEEN_MULTIPLE_NODES` status means the transactions were seen on the network, not mined. **Update, 7 November:** both phone debits and both funding transfers now show 701 confirmations on WhatsOnChain and `MINED` on Arcade; the mining blocker is closed without another page purchase or a manual rebroadcast by the agent. Changing the fee setting affects future transfers, not existing signed transactions. The client also checks and saves broadcast results instead of ignoring failures. [Original investigation](spike/evidence/phone-transaction-status-2026-11-02.md), [confirmation and acceptance checks](spike/evidence/acceptance-check-2026-11-07.md).
 
 **Why this differs from the brief:** official BRC-105 middleware coordinates the challenge/retry instead of a hand-written payment endpoint. It still uses `createAction` and Atomic BEEF. We do not combine it with the scaffold's separate signed-proof recipe. We avoid paid prefetch so readers pay only for pages they explicitly request.
 
@@ -89,7 +89,7 @@ The reader now shows its payment explanation once per tab session. Later Next cl
 
 **Allowance accounting is unreliable in the tested wallet:** the hostname allowance counted 6 sats while port-labelled page payments brought actual spending to 74. The same query affects enforcement. Offline reproduction covered toolbox 2.14.5 and 2.14.9. The recorded upstream review found Desktop PR #124 fixing future labels on an integration branch, excluding old records, outside the inspected v3.1.1 release. Its release status has not been rechecked for this rewrite. [Investigation](spike/evidence/spending-originator-accounting-2026-10-17.md), [follow-up](docs/wallet-originator-follow-up.md).
 
-**BSV Browser 1.6.3:** phone previews, recovery of an unpaid challenge and a grouped native permission sheet have been observed. Page 3 opened; the reader's 28 sats matches the native wallet's 28-sat debit. A separate permission grant debited 199 sats. Funding of 7,000 minus those 227 sats matches the displayed 6,773-sat balance. Reopening the owned page preserves its 28-sat total. Both outgoing records show `unproven`; the full transaction IDs were checked and the unmined Desktop funding dependency was identified (see §2). Page 4 quotes another 23-sat fee; silent subsequent purchases and allowance accounting remain unverified. Desktop and phone have different identities, so same-identity resume is still open.
+**BSV Browser 1.6.3:** phone previews, recovery of an unpaid challenge and a grouped native permission sheet have been observed. Page 3 opened; the reader's 28 sats matches the native wallet's 28-sat debit. A separate permission grant debited 199 sats. Funding of 7,000 minus those 227 sats matched the displayed 6,773-sat balance at the recorded check. Reopening the owned page preserves its 28-sat total. The outgoing transactions initially showed `unproven` but are now mined (see §2); a fresh wallet UI status check is pending. Page 4 quotes another 23-sat fee; silent subsequent purchases and allowance accounting remain unverified. Desktop and phone have different identities, so same-identity resume is still open.
 
 The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176) requests suitable fees for ordinary micropayment users; submitted 2026-10-29 and awaiting maintainer response. Raising Pagestream's cap does not lower wallet fees.
 

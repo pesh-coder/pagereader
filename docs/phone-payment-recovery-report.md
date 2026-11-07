@@ -1,5 +1,7 @@
 # Phone payments: recovery report
 
+**Update, 2026-11-07: the mining blocker is closed.** All four transactions below now return 701 confirmations on WhatsOnChain and `MINED` on Arcade. Mining-proof endpoints for both phone debits return HTTP 200. No new page purchase or manual rebroadcast was made by the agent. A local wallet status refresh remains to be observed. [Current checks](../spike/evidence/acceptance-check-2026-11-07.md). The report below preserves the earlier investigation; it is no longer a request to recover unmined transfers.
+
 Prepared 2026-11-02. Not published or sent externally.
 
 BSV Desktop 3.3.1 funded BSV Browser 1.6.3. Browser's 28-sat Pagestream purchase and 199-sat permission grant remain unproven. We recovered the original purchase proof through the receiving wallet and checked the processor records, not just explorer pages.
