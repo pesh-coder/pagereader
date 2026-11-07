@@ -424,8 +424,13 @@ export function createReaderGateway(
         await acquire()
         if (readingFeeConsent?.identityKey === null)
           readingFeeConsent.identityKey = wallet!.identityKey
-        const status = await readOnly<Status>(api(`status/${page}`))
-        checkedStatus = status
+        // The page route itself checks ownership and reserves exactly one intent
+        // before issuing a challenge. A fresh local turn need not first fetch
+        // status. Every existing journal/debit and every recovery keeps that check.
+        const fresh = !recoveryOnly && !wallet!.getAttempt(edition, page) && !me?.purchases.some(p => p.page === page) &&
+          ![...loadSpends().values()].some(s => s.identityKey === wallet!.identityKey && s.edition === edition && s.page === page)
+        const status: Status = fresh ? { purchase: null, intent: null } : await readOnly<Status>(api(`status/${page}`))
+        checkedStatus = fresh ? undefined : status
         let body: ReaderPage
         if (status.purchase) body = await readOnly(api(`owned/${page}`))
         else {

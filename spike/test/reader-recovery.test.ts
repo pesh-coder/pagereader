@@ -54,6 +54,7 @@ function fixture(t: TestContext) {
     state: string;
     txid: string | null;
   } | null = null;
+  let statuses = 0
   let creates = 0,
     recoveries = 0,
     failHistory = false,
@@ -79,8 +80,10 @@ function fixture(t: TestContext) {
               bookmark: null,
             });
           }
-          if (path.includes("/status/"))
+          if (path.includes("/status/")) {
+            statuses++;
             return response({ purchase: null, intent: path.endsWith('/3') ? serverIntent : null });
+          }
           if (path.includes("/recover/")) {
             recoveries++;
             assert.equal(init?.method, "POST");
@@ -140,6 +143,7 @@ function fixture(t: TestContext) {
     values,
     ids,
     feeCaps,
+    statusCount: () => statuses,
     changeIdentity: (next: string) => { identityKey = next; },
     counts: () => ({ creates, recoveries }),
     historyFailure: () => {
@@ -403,3 +407,16 @@ test('Check payment reconciles eligible unsigned failure without a charge; only 
   await f.gateway.page(book, 3);
   assert.equal(f.counts().creates, 1); assert.deepEqual(f.ids, [requestId]);
 });
+
+
+test('fresh explicit turn removes the status roundtrip; existing attempts and recovery retain it', async t => {
+  const f = fixture(t); await f.gateway.library(); await f.gateway.connect(book)
+  await f.gateway.page(book, 4)
+  assert.equal(f.statusCount(), 0)
+  f.setAttempt('preparing')
+  await assert.rejects(f.gateway.page(book, 3), error => error instanceof ReaderError && error.action === 'check')
+  assert.equal(f.statusCount(), 1)
+  await assert.rejects(f.gateway.page(book, 3, true))
+  assert.equal(f.statusCount(), 2)
+  assert.equal(f.counts().creates, 1)
+})
