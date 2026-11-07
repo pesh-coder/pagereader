@@ -15,7 +15,9 @@ Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Orig
 
 ## Next device action
 
-On the phone, refresh the existing 28-sat page payment and 199-sat grant in wallet Activity; mining proofs are now available. Reopen Pagestream and use Continue reading for the owned Holmes page 3. Record both wallet statuses, the displayed page and the unchanged 28-sat book total. This check creates no purchase. Confirm Desktop's saved custom rate is 100 sats/kB before a later, explicitly budgeted paid run; restoring Desktop previously reset it to 250.
+**Phone owned-page resume passed:** on 7 November the owner confirmed the same 28-sat book total after reopening/resuming. The two local wallet Activity statuses were not supplied; mining is independently confirmed, but UI proof refresh is not assumed complete.
+
+**Next:** log out of Pagestream's app connection, return to Library, open Holmes and read free pages 1 and 2. Confirm both load with no errors or native wallet prompt; do not choose Continue reading or page 3 in this check. Confirm Desktop's saved custom rate is 100 sats/kB before a later, explicitly budgeted paid run; restoring Desktop previously reset it to 250.
 
 ## Historical device evidence, 2 November
 
