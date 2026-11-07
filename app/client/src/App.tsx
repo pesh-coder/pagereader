@@ -141,6 +141,7 @@ export default function App() {
         article.current?.focus({ preventScroll: true })
         timings.finish(timingToken, body.purchase?.txid, timingContext(selected.editionId ?? ''), gateway.receipts(),
           document.visibilityState === 'visible' && article.current?.getAttribute('aria-label') === `${selected.title}, page ${body.page}`)
+        invalidate(n => n + 1)
       }))
     } catch (failure) {
       timings.fail(timingToken)
@@ -350,6 +351,7 @@ export default function App() {
             />
           </div>
         </div>
+        {timings.run && <div className="reading-tools"><button className="quiet" onClick={() => setPanel('timings')} aria-live="polite">{timings.run.recording ? 'Recording' : 'Capture stopped'} ? {timings.paidCount()} new paid turns</button></div>}
         {book && (
           <div className="reading-tools">
             <button
@@ -557,7 +559,7 @@ export default function App() {
         </>
       )}
       {panel === 'timings' && (
-        <TimingPanel timings={timings} close={close} start={(name, version) => {
+        <TimingPanel timings={timings} close={close} changed={() => invalidate(n => n + 1)} unavailable={busy ? 'Wait for the current page to finish loading.' : !book || !page || !owns(page.page) ? 'Capture is unavailable here. Close this panel, open a book and use Continue reading to display an owned page, then return here.' : ''} start={(name, version) => {
           if (busy || !book || !page || !owns(page.page)) throw new Error('Open an owned page and wait for it to finish loading first.')
           timings.start(name, version, timingContext(book.editionId ?? ''), location.origin)
         }} />
