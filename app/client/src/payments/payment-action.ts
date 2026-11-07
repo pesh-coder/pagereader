@@ -1,6 +1,7 @@
 import { Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import { networkFee } from './payment-cost.js'
+import type { WalletDiagnostic } from './wallet-diagnostic.js'
 
 export interface PaymentAttempt {
   identityKey: string
@@ -17,7 +18,7 @@ export interface PaymentAttempt {
     | 'aborted'
   retryReason?: 'cancelled' | 'insufficient-funds' | 'fee-limit' | 'not-started' | 'unsigned-not-created'
   walletRequestStarted?: boolean
-  lastFailure?: { method: string; code?: number | string }
+  lastFailure?: { method: string; code?: number | string; diagnostic?: WalletDiagnostic }
   broadcast?: { status: 'unproven' | 'sending' | 'failed' | 'unknown'; checkedAt: string }
   reference?: string
   txid?: string

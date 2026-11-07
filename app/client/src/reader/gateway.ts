@@ -1,4 +1,5 @@
 import { config } from '../payments/config.js'
+import type { WalletDiagnostic } from '../payments/wallet-diagnostic.js'
 import type { Spend, WalletCall, HttpCall } from '../payments/wallet-client.js'
 import { savedBookmark, saveDisplayedBookmark } from './bookmarks.js'
 
@@ -114,7 +115,7 @@ export function createReaderGateway(
     allowSpend = false
   let paused = true
   let history: HistoryState = 'idle'
-  let lastWalletFailure: { method: string; code?: number | string } | undefined
+  let lastWalletFailure: { method: string; code?: number | string; diagnostic?: WalletDiagnostic } | undefined
   let lastHttp: { path: string; status: number } | undefined
   let checkedStatus: Status | undefined
   // Per-payment fee ceiling only, not a wallet spending budget. Never persisted:
@@ -222,7 +223,7 @@ export function createReaderGateway(
           console.debug('Wallet timing', call)
           try { observer?.wallet(call) } catch { /* Diagnostics cannot interrupt payments. */ }
           if (!call.ok && call.method !== 'page payment workflow')
-            lastWalletFailure = { method: call.method, code: call.error?.code }
+            lastWalletFailure = { method: call.method, code: call.error?.code, diagnostic: call.error?.diagnostic }
         },
         http: (http) => {
           console.debug('HTTP timing', http)
@@ -560,6 +561,9 @@ export function createReaderGateway(
           ...(failure
             ? [`Wallet call: ${failure.method}; error code: ${failure.code ?? 'not supplied'}.`]
             : ['No wallet failure code was saved for this attempt.']),
+          ...(failure?.diagnostic?.kind === 'proof-depth-limit'
+            ? [`Wallet reported its payment-proof depth limit (${failure.diagnostic.limit}). This is a wallet proof limit, separate from page price and spending allowance.`]
+            : []),
           ...(http ? [`Last HTTP result: ${http.status} (${http.path}).`] : []),
         ]
         const reported = (message: string, action: 'connect' | 'retry' | 'check') => {

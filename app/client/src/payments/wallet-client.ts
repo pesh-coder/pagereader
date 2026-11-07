@@ -3,6 +3,7 @@ import { AuthFetch, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { connectDesktopWallet } from '../bsv/walletAcquisition.js'
 import { config } from './config.js'
 import { networkFee } from './payment-cost.js'
+import { walletDiagnostic, type WalletDiagnostic } from './wallet-diagnostic.js'
 import {
   preparePayment,
   broadcastPayment,
@@ -19,6 +20,7 @@ export interface WalletCall {
     name?: string
     code?: number | string
     message?: string
+    diagnostic?: WalletDiagnostic
     totalSatoshisNeeded?: number
     moreSatoshisNeeded?: number
   }
@@ -130,11 +132,12 @@ export async function openWallet(callbacks: {
           try {
             const attempt = journal.get()
             if (attempt) {
-              const code = walletError(error).code
+              const { code, diagnostic } = walletError(error)
               journal.save({
                 ...attempt,
                 lastFailure: {
                   method: String(property),
+                  ...(diagnostic ? { diagnostic } : {}),
                   ...(typeof code === 'number' ||
                   (typeof code === 'string' && /^[\w-]{1,80}$/.test(code))
                     ? { code }
@@ -439,8 +442,10 @@ function walletError(error: unknown): NonNullable<WalletCall['error']> {
   if (!error || typeof error !== 'object')
     return { message: 'Wallet operation failed' }
   const value = error as Record<string, unknown>
+  const diagnostic = walletDiagnostic(error)
   // Capture diagnostics only, never wallet arguments, key material, transaction bytes or stacks.
   return {
+    ...(diagnostic ? { diagnostic } : {}),
     ...(typeof value.name === 'string' ? { name: value.name } : {}),
     ...(typeof value.code === 'number' || typeof value.code === 'string'
       ? { code: value.code }

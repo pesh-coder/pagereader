@@ -1,3 +1,4 @@
+import { walletDiagnostic, type WalletDiagnostic } from '../payments/wallet-diagnostic.js'
 import type { HttpCall, Spend, WalletCall } from '../payments/wallet-client.js'
 
 type Context = { identityKey: string | null; network: string | null; edition: string; protocolVersion: string | null }
@@ -5,7 +6,7 @@ type Sample = {
   page: number; edition: string; identityKey: string | null; network: string | null;
   trigger: 'explicit' | 'recovery'; timingBoundary: 'request-to-visible-frame';
   purchased: boolean; visible: boolean; totalMs?: number; txid?: string;
-  walletCalls: { method: string; ms: number; ok: boolean; code?: string | number }[];
+  walletCalls: { method: string; ms: number; ok: boolean; code?: string | number; diagnostic?: WalletDiagnostic }[];
   http: HttpCall[]; startedAt: string; failed?: boolean;
 }
 export interface TimingRun {
@@ -78,8 +79,11 @@ export class ReadingTimings {
   wallet(call: WalletCall) {
     const current = this.current
     if (!current || this.clock() - call.ms < current.start) return
+    // Reclassify the original error; never export arbitrary diagnostic fields.
+    const diagnostic = walletDiagnostic(call.error)
     current.sample.walletCalls.push({ method: call.method, ms: call.ms, ok: call.ok,
-      ...(call.error?.code !== undefined ? { code: call.error.code } : {}) })
+      ...(call.error?.code !== undefined ? { code: call.error.code } : {}),
+      ...(diagnostic ? { diagnostic } : {}) })
   }
   http(call: HttpCall) {
     const current = this.current
