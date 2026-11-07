@@ -68,6 +68,7 @@ export interface ReaderGateway {
   walletVersion(): string | null
   connect(book?: Book): Promise<void>
   disconnect(): void
+  approveReadingFees(): void
   savedPage(book: Book): number | null
   reconcileCosts(): Promise<{ matched: number; missing: number }>
 }
@@ -113,6 +114,9 @@ export function createReaderGateway(
   let lastWalletFailure: { method: string; code?: number | string } | undefined
   let lastHttp: { path: string; status: number } | undefined
   let checkedStatus: Status | undefined
+  // Per-payment fee ceiling only, not a wallet spending budget. Never persisted:
+  // reload, logout and another gateway require a new visible approval.
+  let readingFeeConsent: { identityKey: string | null; maxFeeSats: number } | undefined
   const api = (path: string, selectedEdition = edition) =>
     `/api/editions/${encodeURIComponent(selectedEdition)}/${path}`
   const checkPage = (body: ReaderPage, book: Book, page: number) => {
@@ -274,10 +278,17 @@ export function createReaderGateway(
       // Drop only this app's active connection. Durable proofs, ownership and
       // wallet-side grants are never deleted or revoked by logging out.
       allowSpend = false
+      readingFeeConsent = undefined
       wallet = undefined
       me = undefined
       history = 'idle'
       changed()
+    },
+    approveReadingFees() {
+      readingFeeConsent = {
+        identityKey: wallet?.identityKey ?? null,
+        maxFeeSats: config.provisional.readerMaxPageFeeSats,
+      }
     },
     savedPage: (book) => savedBookmark(book)?.page ?? null,
     async reconcileCosts() {
@@ -398,6 +409,8 @@ export function createReaderGateway(
       lastWalletFailure = undefined
       try {
         await acquire()
+        if (readingFeeConsent?.identityKey === null)
+          readingFeeConsent.identityKey = wallet!.identityKey
         const status = await readOnly<Status>(api(`status/${page}`))
         checkedStatus = status
         let body: ReaderPage
@@ -473,7 +486,9 @@ export function createReaderGateway(
               !Number.isSafeInteger(feeApproval.maxFeeSats) ||
               feeApproval.maxFeeSats !== attempt.quotedFeeSats
             )) throw new ReaderError('The fee quote changed or belongs to another payment. Review the current page quote again.', 'check')
-            wallet!.beginPayment(edition, page, requestId, feeApproval?.maxFeeSats)
+            const readerFeeLimit = readingFeeConsent?.identityKey === wallet!.identityKey
+              ? readingFeeConsent.maxFeeSats : undefined
+            wallet!.beginPayment(edition, page, requestId, feeApproval?.maxFeeSats ?? readerFeeLimit)
             allowSpend = true
             body = await paidResponse(
               await wallet!.auth.fetch(location.origin + api(`pages/${page}`), {

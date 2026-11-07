@@ -34,9 +34,9 @@ export default function App() {
   const [errorAction, setErrorAction] = useState<
     'connect' | 'retry' | 'check' | null
   >(null)
-  const [explained, setExplained] = useState(
-    () => sessionStorage.getItem('pagestream-payment-explained') === '1',
-  )
+  // Do not reuse the old sessionStorage flag: it only explained a 1-sat fee cap.
+  // The higher reader ceiling requires fresh consent after reload or logout.
+  const [explained, setExplained] = useState(false)
   const [failedPage, setFailedPage] = useState<number | null>(null)
   const [paused, setPaused] = useState(true)
   const [checkingCosts, setCheckingCosts] = useState(false)
@@ -259,9 +259,11 @@ export default function App() {
     }
   }
   function continuePurchase() {
-    if (!book) return
-    sessionStorage.setItem('pagestream-payment-explained', '1')
-    setExplained(true)
+    if (!book || busy || lock.current) return
+    if (!paused) {
+      gateway.approveReadingFees()
+      setExplained(true)
+    }
     void turn(book, target, paused)
   }
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
@@ -275,7 +277,7 @@ export default function App() {
   )
   const nextPaid =
     page && page.page + 1 > config.freePages && !owns(page.page + 1)
-  const maxCost = config.priceSats + config.provisional.maxPageFeeSats
+  const maxCost = config.priceSats + config.provisional.readerMaxPageFeeSats
   const close = () => setPanel(null)
   return (
     <div
@@ -318,6 +320,7 @@ export default function App() {
               connect={() => setPanel('wallet')}
               disconnect={() => {
                 gateway.disconnect()
+                setExplained(false)
                 setPage((current) =>
                   current && current.page > config.freePages ? null : current,
                 )
@@ -380,7 +383,7 @@ export default function App() {
               {failedPage <= config.freePages
                 ? 'Try again'
                 : feeApproval
-                  ? `Retry with ${config.provisional.maxPageFeeSats}-sat fee limit`
+                  ? 'Retry within the approved fee limit'
                 : 'Try purchase again'}
             </button>
           )}
@@ -641,14 +644,17 @@ export default function App() {
             If you already own page {target}, it opens without another charge.
           </p>
           <p className="subtle">
-            We check the wallet’s fee before paying. The initial fee limit is{' '}
-            {config.provisional.maxPageFeeSats} sat, not a fee quote. A higher fee
-            needs your separate approval.
+            Allow up to {config.provisional.readerMaxPageFeeSats} sats in miner fees
+            per new page: at most {maxCost} sats total. We charge the actual fee,
+            so a lower fee costs less. Higher or unknown fees stop for review.
+          </p>
+          <p className="subtle">
+            This app approval lasts until you reload or log out. Each Next click
+            buys only the page you request; we never buy ahead.
           </p>
           <p className="subtle">
             {config.provisional.readerPermissionCopy} Your wallet controls when
-            approval is needed; its allowance may be monthly. Each Next click
-            requests one page. We never buy ahead.
+            approval is needed; its allowance may be monthly.
           </p>
           <WalletGuidance />
           {paused && (
@@ -660,7 +666,7 @@ export default function App() {
           <button className="paid-action wide" onClick={continuePurchase}>
             {paused
               ? `Check page ${target}`
-              : `Continue to page ${target} · up to ${maxCost} sats`}
+              : `Allow up to ${maxCost} sats per page and open page ${target}`}
           </button>
         </Panel>
       )}

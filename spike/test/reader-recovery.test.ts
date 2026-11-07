@@ -60,9 +60,10 @@ function fixture(t: TestContext) {
     changeIntentOnRecheck = false;
   const ids: string[] = [];
   const feeCaps: (number | undefined)[] = [];
+  let identityKey = 'reader';
   const open: typeof openWallet = async (callbacks) =>
     ({
-      identityKey: "reader",
+      identityKey,
       version: "fixture-version",
       auth: {
         fetch: async (url: string, init?: RequestInit) => {
@@ -72,13 +73,13 @@ function fixture(t: TestContext) {
           if (path.endsWith("/me")) {
             if (failHistory) throw new Error("History offline");
             return response({
-              identityKey: "reader",
+              identityKey,
               purchases: [],
               bookmark: null,
             });
           }
           if (path.includes("/status/"))
-            return response({ purchase: null, intent: serverIntent });
+            return response({ purchase: null, intent: path.endsWith('/3') ? serverIntent : null });
           if (path.includes("/recover/")) {
             recoveries++;
             assert.equal(init?.method, "POST");
@@ -92,17 +93,18 @@ function fixture(t: TestContext) {
           if (path.includes("/pages/")) {
             assert.equal(callbacks.canSpend(), true);
             creates++;
+            const page = Number(path.split('/').at(-1));
             return response({
               editionId: "edition",
-              page: 3,
+              page,
               paragraphs: ["Paid"],
-              purchase,
+              purchase: page === 3 ? purchase : { ...purchase, page, txid: `original-transaction-${page}` },
             });
           }
           throw new Error("Unexpected path: " + path);
         },
       },
-      getAttempt: () => attempt,
+      getAttempt: (_edition: string, page: number) => attempt?.page === page && attempt.identityKey === identityKey ? attempt : undefined,
       reconcileUnpaidChallenge: async (_edition: string, _page: number, id: string, recheck: () => Promise<boolean>) => {
         assert.equal(callbacks.canSpend(), false);
         if (failReconciliation) throw new Error("Wallet history could not confirm a received-funds-only wallet");
@@ -112,13 +114,13 @@ function fixture(t: TestContext) {
         attempt = { identityKey: "reader", edition: "edition", page: 3, requestId: id, state: "aborted", retryReason: "not-started" };
         return true;
       },
-      beginPayment: (_edition: string, _page: number, id: string, cap?: number) => {
+      beginPayment: (_edition: string, page: number, id: string, cap?: number) => {
         ids.push(id);
         feeCaps.push(cap);
         attempt = {
-          identityKey: "reader",
+          identityKey,
           edition: "edition",
-          page: 3,
+          page,
           requestId: id,
           state: "reserved",
         };
@@ -131,6 +133,7 @@ function fixture(t: TestContext) {
     values,
     ids,
     feeCaps,
+    changeIdentity: (next: string) => { identityKey = next; },
     counts: () => ({ creates, recoveries }),
     historyFailure: () => {
       failHistory = true;
@@ -233,6 +236,52 @@ test("known cancelled fee quote offers a page-bound approval; invalid bindings c
   f.rejectedFee(23);
   await f.gateway.page(book, 3);
   assert.deepEqual(f.feeCaps, [23, undefined]);
+});
+
+test('one reader fee consent covers successive explicit turns and logout clears it before another identity', async t => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.gateway.approveReadingFees();
+  assert.equal(f.counts().creates, 0); // Approval itself does not buy or connect.
+  await f.gateway.page(book, 3);
+  await f.gateway.page(book, 4);
+  assert.deepEqual(f.feeCaps, [23, 23]);
+  assert.equal(f.counts().creates, 2);
+  f.gateway.disconnect();
+  f.changeIdentity('other-reader');
+  await f.gateway.connect(book);
+  await f.gateway.page(book, 5);
+  assert.deepEqual(f.feeCaps, [23, 23, undefined]);
+});
+
+test('reader consent cannot release an uncertain attempt or cause read-only checks to spend', async t => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.gateway.approveReadingFees();
+  f.setAttempt('signing');
+  await assert.rejects(f.gateway.page(book, 3), /Check payment/);
+  f.setAttempt('aborted');
+  await assert.rejects(f.gateway.page(book, 3, true), /Payment cancelled/);
+  assert.equal(f.counts().creates, 0);
+  assert.deepEqual(f.feeCaps, []);
+});
+
+test('a separately approved higher quote does not raise the continuing reader ceiling', async t => {
+  const f = fixture(t);
+  await f.gateway.library();
+  f.gateway.approveReadingFees();
+  f.setAttempt('aborted');
+  f.rejectedFee(24);
+  let approval: ReaderError['feeApproval'];
+  await assert.rejects(f.gateway.page(book, 3, true), error => {
+    assert.ok(error instanceof ReaderError);
+    approval = error.feeApproval;
+    return true;
+  });
+  assert.equal(f.counts().creates, 0);
+  await f.gateway.page(book, 3, false, approval);
+  await f.gateway.page(book, 4);
+  assert.deepEqual(f.feeCaps, [24, 23]);
 });
 
 test("unknown fee or unresolved signing never offers a higher fee approval", async (t) => {

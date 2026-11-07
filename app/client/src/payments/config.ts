@@ -8,6 +8,9 @@ export const config = {
     walletLimitSats: 5000,
     feeEstimateSats: null as number | null,
     maxPageFeeSats: 1,
+    // Reader-only ceiling after explicit consent for the current open reader.
+    // Historical operator scripts and unapproved calls retain the 1-sat default.
+    readerMaxPageFeeSats: 23,
     // Offline permission-cost illustrations, never a native grant quote/cap.
     permissionModelFeeRateSatsPerKb: 1,
     permissionModelScenarios: [
