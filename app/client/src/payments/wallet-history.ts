@@ -80,11 +80,14 @@ export async function readActionCosts(
     }))
 }
 
-// Full unfiltered history, not the Activity screen or a page-label subset.
+// Full unfiltered history. An unmined outgoing payment is resolved for this
+// check only when its exact TXID matches this caller's authenticated server receipt.
 // Return a stable fingerprint so a concurrent action invalidates recovery.
-export async function completedHistoryFingerprint(wallet: Pick<WalletInterface, 'listActions'>): Promise<string> {
+export async function recoveryHistoryFingerprint(wallet: Pick<WalletInterface, 'listActions'>, acceptedTxids: string[] = []): Promise<string> {
   const actions = await readHistory(wallet)
-  if (!actions.length || actions.some(action => action.status !== 'completed'))
+  const accepted = new Set(acceptedTxids.filter(id => /^[a-f0-9]{64}$/.test(id)))
+  if (!actions.length || actions.some(action => action.status !== 'completed' &&
+    !(action.status === 'unproven' && action.isOutgoing && action.satoshis < 0 && accepted.has(action.txid))))
     throw new Error('Wallet history still has active or uncertain actions. The original unsigned request was kept; no payment was made.')
   return JSON.stringify(actions.sort((a, b) => a.txid.localeCompare(b.txid)))
 }

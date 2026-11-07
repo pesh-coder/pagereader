@@ -450,7 +450,7 @@ export function createReaderGateway(
               const current = await readOnly<Status>(api(`status/${page}`))
               checkedStatus = current
               return !current.purchase && current.intent?.request_id === requestId && current.intent.state === 'challenged' && !current.intent.txid
-            })
+            }, me!.purchases.filter(p => p.sats === config.priceSats).map(p => p.txid))
             attempt = wallet!.getAttempt(edition, page)
           }
           if (attempt?.proof)
@@ -483,7 +483,7 @@ export function createReaderGateway(
             if (retryable && recoveryOnly)
               throw new ReaderError(
                 attempt?.retryReason === 'unsigned-not-created'
-                  ? 'Payment checked: the unsigned wallet request failed before signing, wallet history is completed, and the server still has the original unpaid request. No payment was made by this check. You may retry the same page request.'
+                  ? 'Payment checked: the wallet has no unmatched active actions and the server still has the original unpaid request. No payment was made by this check. You may retry the same page request.'
                   : attempt?.retryReason === 'insufficient-funds'
                   ? 'Your wallet needs more funds. Your current page is still available.'
                   : attempt?.retryReason === 'not-started'

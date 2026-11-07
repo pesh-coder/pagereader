@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { WalletInterface } from '@bsv/sdk'
 import type { PaymentAttempt } from '../src/payment-action.js'
 import { reconcileUnsignedPreparation } from '../../app/client/src/payments/unsigned-preparation.js'
-import { completedHistoryFingerprint } from '../../app/client/src/payments/wallet-history.js'
+import { recoveryHistoryFingerprint } from '../../app/client/src/payments/wallet-history.js'
 
 function fixture() {
   let attempt: PaymentAttempt = { identityKey: 'reader', edition: 'edition', page: 20, requestId: 'original',
@@ -11,7 +11,7 @@ function fixture() {
   let writes = 0, historyReads = 0
   const options = { identityKey: 'reader', edition: 'edition', page: 20, requestId: 'original',
     get: () => attempt, save: (next: PaymentAttempt) => { writes++; attempt = next },
-    completedHistory: async () => { historyReads++; return 'stable-completed-history' }, recheck: async () => true }
+    historyFingerprint: async () => { historyReads++; return 'stable-completed-history' }, recheck: async () => true }
   return { options, set: (next: Partial<PaymentAttempt>) => { attempt = { ...attempt, ...next } },
     state: () => ({ attempt, writes, historyReads }) }
 }
@@ -52,7 +52,7 @@ test('changed intent, history, journal or failed history checks leave the origin
       if (scenario === 'journal') f.set({ reference: 'other-tab-prepared' })
       return scenario !== 'intent'
     }
-    f.options.completedHistory = async () => {
+    f.options.historyFingerprint = async () => {
       if (scenario === 'unavailable') throw new Error('history unavailable')
       return scenario === 'history' ? String(reads++) : 'stable'
     }
@@ -68,15 +68,24 @@ test('wallet history recovery requires complete, consistent, completed transacti
   const wallet = { listActions: async (args: { labels: string[]; seekPermission: boolean }) => {
     assert.deepEqual(args.labels, []); assert.equal(args.seekPermission, false); return result
   } } as unknown as Pick<WalletInterface, 'listActions'>
-  assert.ok(await completedHistoryFingerprint(wallet))
+  assert.ok(await recoveryHistoryFingerprint(wallet))
   for (const status of ['unsigned', 'unprocessed', 'nosend', 'sending', 'unproven', 'failed', 'unknown']) {
     result = { totalActions: 1, actions: [{ ...action, status }] }
-    await assert.rejects(completedHistoryFingerprint(wallet))
+    await assert.rejects(recoveryHistoryFingerprint(wallet))
   }
+  result = { totalActions: 1, actions: [{ ...action, status: 'unproven' }] }
+  assert.ok(await recoveryHistoryFingerprint(wallet, [action.txid]), 'accepted prior page needs no new block for unsigned recovery')
+  await assert.rejects(recoveryHistoryFingerprint(wallet, ['b'.repeat(64)]))
+  for (const status of ['unsigned', 'nosend', 'sending', 'failed']) {
+    result = { totalActions: 1, actions: [{ ...action, status }] }
+    await assert.rejects(recoveryHistoryFingerprint(wallet, [action.txid]))
+  }
+  result = { totalActions: 1, actions: [{ ...action, isOutgoing: false, status: 'unproven' }] }
+  await assert.rejects(recoveryHistoryFingerprint(wallet, [action.txid]))
   result = { totalActions: 1, actions: [{ ...action, txid: '', status: 'unsigned' }] }
-  await assert.rejects(completedHistoryFingerprint(wallet))
+  await assert.rejects(recoveryHistoryFingerprint(wallet))
   result = { totalActions: 2, actions: [action] }
-  await assert.rejects(completedHistoryFingerprint(wallet))
+  await assert.rejects(recoveryHistoryFingerprint(wallet))
   result = { totalActions: 0, actions: [] }
-  await assert.rejects(completedHistoryFingerprint(wallet))
+  await assert.rejects(recoveryHistoryFingerprint(wallet))
 })

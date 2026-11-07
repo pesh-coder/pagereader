@@ -12,15 +12,15 @@ export function eligibleUnsignedPreparation(attempt: PaymentAttempt | undefined,
 export async function reconcileUnsignedPreparation(options: {
   identityKey: string; edition: string; page: number; requestId: string;
   get(): PaymentAttempt | undefined; save(attempt: PaymentAttempt): void;
-  completedHistory(): Promise<string>; recheck(): Promise<boolean>;
+  historyFingerprint(): Promise<string>; recheck(): Promise<boolean>;
 }) {
   const { identityKey, edition, page, requestId } = options
   const prior = options.get()
   if (!eligibleUnsignedPreparation(prior, identityKey, edition, page, requestId)) return false
   const snapshot = JSON.stringify(prior)
-  const before = await options.completedHistory()
+  const before = await options.historyFingerprint()
   if (!(await options.recheck())) return false
-  const after = await options.completedHistory()
+  const after = await options.historyFingerprint()
   if (before !== after || snapshot !== JSON.stringify(options.get())) return false
   options.save({ ...prior!, state: 'aborted', retryReason: 'unsigned-not-created' })
   return true

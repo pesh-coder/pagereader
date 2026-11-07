@@ -110,7 +110,7 @@ function fixture(t: TestContext) {
         assert.equal(callbacks.canSpend(), false);
         return reconcileUnsignedPreparation({ identityKey, edition: _edition, page: _page, requestId: id,
           get: () => attempt, save: next => { attempt = next },
-          completedHistory: async () => { if (failReconciliation) throw new Error('Active wallet action'); return 'stable-completed' }, recheck });
+          historyFingerprint: async () => { if (failReconciliation) throw new Error('Active wallet action'); return 'stable-completed' }, recheck });
       },
       reconcileUnpaidChallenge: async (_edition: string, _page: number, id: string, recheck: () => Promise<boolean>) => {
         assert.equal(callbacks.canSpend(), false);
