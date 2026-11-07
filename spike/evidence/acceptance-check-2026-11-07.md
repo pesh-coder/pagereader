@@ -37,6 +37,16 @@ The screenshot offers a separate approval of **up to 28 sats for page 4** (5 pri
 
 The introductory panel was clarified to show its target page number, explain that already-owned pages are free, and distinguish the initial fee limit from a wallet quote. This is a copy correction, not an increase to the cap or a claim that the payment failure was fixed. Client build/lint pass; the local wallet-free preview confirms the revised panel wording without initiating wallet calls.
 
+### Page 4 completed, then reader fee consent implemented
+
+The owner then approved the 28-sat page-4 offer and reported success, a 28-sat debit and an almost-instant turn (estimated under one second). This is an observation, not an instrumented p95 sample. The reply does not distinguish native wallet approvals from the app approval; native prompt count remains unverified.
+
+Read-only receiving-wallet queries show one new incoming action, TXID `3f197a718fba71d4322da280b3217351d9301f17b2db6e6560969b8bb355fb51`, currently `unproven` at the check. Its saved transaction is 225 bytes, pays 5 sats in output 0 and has an independently calculated 23-sat fee. Its input spends the original phone page-3 transaction. The expected recorded book total is 56 sats; the user has not yet reported that counter value. No agent-created payment was involved.
+
+The owner explicitly requested automatic Next turns using the observed fee instead of repeating the 1-sat failure/approval flow. Implemented **one app consent per open reader** for at most 23 sats in miner fees per new page, plus the 5-sat seller price. Only the actual fee is charged. Consent is held in memory, bound to the acquired wallet identity and cleared on logout/reload; the old sessionStorage explanation flag cannot authorize the higher ceiling. Existing operator/unapproved defaults remain 1 sat. Fees above 23 and unknown fees remain blocked before signing; a separate higher approval is still bound to one original attempt and does not raise the ongoing ceiling. No paid prefetch or wallet permission change was introduced. This per-payment safety ceiling is not a substitute for the brief's wallet-managed session spending budget.
+
+Full suite: **87 passed, 0 failed**. Added gateway tests for consecutive turns, logout/identity change, read-only/uncertain attempts and a non-persistent higher override; existing payment-action tests reject 24-sat and unknown fees under a 23-sat approval. Type checks and client build/lint pass. Local UI inspection confirms the new maximum, actual-fee wording, reload/logout expiry and unchanged wallet-free preview flow. The physical-phone automatic-Next run after deployment is still pending.
+
 The owner subsequently confirmed that phone owned-page resume still displays the same **28-sat total**. This closes that read-only resume/counter check; the reply did not state the two wallet Activity statuses, so their local proof refresh is not assumed complete.
 
 Still open: native wallet status refresh; supported same-identity cross-device resume; native session approval/allowance enforcement; paid p95; remaining negative, recovery, race and stopping tests; 90-second demo and team receipt. Recorded spending already matches the supplied Desktop and phone records, but broader failure/pending accounting still needs verification.
