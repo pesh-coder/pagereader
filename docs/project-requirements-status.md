@@ -17,7 +17,7 @@ The [senior review R1 checklist](review-feedback-r1.md) records the reader, reco
 | Requirement | Current result |
 |---|---|
 | Six-step story live in about 90 seconds, mainnet | Not rehearsed end to end |
-| Desktop and Browser, including cross-device bookmark | Purchases and baseline debit reconciliation work on both; phone purchase is now mined. Same-identity cross-device resume and subsequent paid turns remain open |
+| Desktop and Browser, including cross-device bookmark | Purchases and baseline debit reconciliation work on both; phone purchase is now mined. Silent subsequent phone turns pass; same-identity cross-device resume remains open |
 | Wallet prompts once per session | Not met: observed saved grant is monthly, with initial separate prompts; one subsequent Desktop turn was prompt-free |
 | Underpaid/replayed requests refused | Local coverage passes; existing-proof live-local replay checks pass; full native negative cases remain |
 | Learnings written and shared | Rewritten for review; repository publication was authorized previously, but team delivery/receipt is not confirmed |
@@ -29,10 +29,10 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 | Criterion | Status | Evidence and what remains |
 |---|---|---|
 | C1 Free browsing/previews, no wallet or errors on both devices | PASS | Eight books and both previews pass the 16-page wallet-free hosted checks. Desktop free reading was already observed; on 7 November the owner logged out of the app wallet connection on the physical phone and confirmed Holmes pages 1 and 2 load with no errors or wallet prompt, closing the earlier phone failure. |
-| C2 One native prompt through first visit and 20 paid turns | FAIL | Grouped 5,000/month grant cost 5 sats; next page had zero prompts. Session scope is not met; clean-origin cohorts on both wallets are missing. |
+| C2 One native prompt through first visit and 20 paid turns | FAIL | Grouped 5,000/month grant cost 5 sats; next page had zero prompts. Phone pages 5 and 6 now also had zero native prompts. Session scope is not met; complete allowance/clean-origin cohorts on both wallets are missing. |
 | C3 Paid page p95 ≤500 ms, 20 turns per wallet | UNRESOLVED | Old measured sample: 9.01 s HTTP, 47.33 s request-to-frame marker. Phone page 4 on 7 November was reported under a second/almost instant, without instrumented timing. No qualifying cohort; user estimates and owned reads do not establish a paid p95. |
 | C4 Accurate always-visible spend | UNRESOLVED | Baseline comparison passes: Desktop wallet matches 3 page payments totaling 74; phone wallet debit matches the 28-sat reader total, with a separate 199-sat grant. Phone funding/debits reconcile to 6,773. Broader uncertain-payment and same-identity cross-device accounting remain open; wallet allowance accounting is tracked under C2. Neither recorded debit nor server acceptance proves mining. |
-| C5 Underpay 400; wrong-page/identity replay 409 | UNRESOLVED | Local tests pass; existing-proof wrong-page/edition live-local requests returned 409. Native mainnet underpayment/cross-identity evidence remains. |
+| C5 Underpay 400; wrong-page/identity replay 409 | UNRESOLVED | Local tests pass; existing-proof wrong-page/edition live-local requests returned 409. Hosted original-proof cross-identity requests returned 409 twice, no content and no caller entitlement/intent change. Native mainnet underpayment and remaining replay cases remain. |
 | C6 Exactly one charge per page, including lost delivery/two tabs/two devices | UNRESOLVED | Durable proof recovery and local fault/race coverage pass. The local receiver fixture now recovers after acceptance/receipt failure and SQLite restart using the original server proof. Actual receiving-wallet duplicate-import behavior, newly charged live lost delivery and native races remain. |
 | C7 No signup/email/password/card/profile | PASS | Active reader entry, components, wallet helper, payment routes and SQLite schema audited on 7 November; only the wallet's public identity keys purchases/bookmarks, with no account forms or fields. Both existing device purchase observations support the source audit. |
 | C8 Same identity and displayed bookmark on phone | UNRESOLVED | Desktop Resume and hosted owned recovery work without purchasing. User confirms Desktop and Browser have different identities and accepts independent testing. That does not complete same-identity cross-device resume. |
@@ -53,9 +53,9 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 **Live checks still needed**
 
 - Browser's existing page purchase, debit and mining status are reconciled; same-wallet owned-page reopening was observed. Refresh the local wallet proof/status, then establish supported identity continuity for the cross-device story. Current identities differ.
-- Wallet-free phone previews passed. Still observe paid prompt count, scope, cost and allowance consumption on both wallets.
+- Wallet-free phone previews passed. Phone pages 5 and 6 had zero native prompts; still verify scope, cost and allowance consumption across complete cohorts on both wallets.
 - Collect 20 distinct paid-page samples per wallet, preserving slow/failed samples; verify underpayment, replay, lost response and concurrent purchases.
-- Close the tab mid-chapter and confirm no additional purchases start. An already-submitted transaction may finish after close; closing cannot cancel it.
+- Owner reports no additional purchase after the requested close/resume check. Retain this observed pass; actual in-flight interruption and concurrency remain to test. An already-submitted transaction may finish after close; closing cannot cancel it.
 - Rehearse the six-step mainnet story in about 90 seconds, then share the reviewed note with the team.
 
 These are the remaining POC requirements, not a request to add accounts, wallet development, payouts or further design polish. Python remains optional and was not attempted.

@@ -1,16 +1,16 @@
 # Pagestream: remaining acceptance and next run
 
-Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Original session approval and 500-ms targets remain unchanged. No new page payment was made during this investigation.
+Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Original session approval and 500-ms targets remain unchanged. The owner completed phone pages 5 and 6; the coding assistant made no new payment.
 
 **Completed today:** both phone debits and both Desktop funding transfers now show **701 confirmations** on WhatsOnChain and `MINED` on Arcade. Mining-proof endpoints for the two phone debits return 200. The existing mining blocker is closed; a wallet UI refresh may still be needed. All 16 hosted public previews passed without wallet/authentication, and the active reader's no-account audit passed (C7). Mainnet payments have been demonstrated on both wallets (C9); this does not complete the full device story. [Current evidence](../spike/evidence/acceptance-check-2026-11-07.md). The [2 November investigation](../spike/evidence/phone-transaction-status-2026-11-02.md) remains historical evidence of the funding delay.
 
 | Order | Remaining work | Evidence needed to finish |
 |---|---|---|
 | 1 | Cross-device reading | Phone free previews and owned-page resume at 28 sats passed. Establish supported same-identity resume; different existing identities do not pass the original cross-device story. Local wallet proof/status refresh is still unreported. |
-| 2 | Resolve one native approval per session | Establish a supported wallet session budget, correct price-plus-fee allowance consumption and silent subsequent purchases. Current monthly grant and per-page app fee exceptions do not pass. No wallet modification or app/server substitute for the wallet limit. |
+| 2 | Resolve one native approval per session | Establish a supported wallet session budget, correct price-plus-fee allowance consumption and silent subsequent purchases. Phone pages 5 and 6 had zero native prompts and no repeated app fee approval. The monthly grant still does not meet session scope. No wallet modification or app/server substitute for the wallet limit. |
 | 3 | Diagnose and improve paid-turn latency | Fresh stage timings, a demonstrated improvement, then 20 distinct new paid turns per wallet with p95 <=500 ms. Include cold/slow/failed attempts. |
 | 4 | Complete spending/recovery accounting | Baseline comparison is complete: Desktop 74 sats; phone page 28 sats plus separate grant 199 sats. Verify pending, failed/recovered and cross-device cases without duplicate or omitted costs. |
-| 5 | Complete native correctness/stopping tests | Underpayment/replay refusal, original-proof lost-response recovery, concurrent attempts and close-tab observation. An already-submitted transaction may finish. |
+| 5 | Complete native correctness/stopping tests | Underpayment, remaining replay cases, original-proof lost-response recovery and concurrent attempts. Owner reports no new purchase after closing/resuming; hosted cross-identity proof rejection also passed. An already-submitted transaction may finish. |
 | 6 | Rehearse and share | Six-step mainnet demonstration in about 90 seconds; final short learnings and confirmed team delivery. |
 
 ## Next device action
@@ -21,7 +21,9 @@ Updated 2026-11-07. Seller price remains 5 sats; miner fees are additional. Orig
 
 **Page 4 completed:** after the 1-sat cap aborted the unsigned action, the owner approved up to 28 sats and reports page 4 opened for 28 sats in less than a second. Receiver proof confirms 5 sats to seller and 23 sats fee. Native prompt count and the expected 56-sat book total are still to be checked. This rough timing is not a qualifying p95 sample.
 
-**Next practical run:** reload once to obtain the new reader, resume owned page 4, and verify its book total is 56 sats without buying. The first new paid page asks once for this reader visit's **23-sat fee ceiling** (28-sat maximum total per page). Then test explicit Next turns to pages 5 and 6, at most **56 additional sats combined**, and record whether the second turn avoids another app approval, actual native prompts, actual fees and the final book total. Stop on a new paid permission grant, higher/unknown fee or uncertain payment; no replacement attempt. This app consent is bound to the active wallet and cleared on reload/logout; it does not replace the wallet's own spending budget. Confirm Desktop's saved rate is 100 sats/kB before any Desktop paid run.
+**Phone repeat turns and stopping check passed at the reported scope:** the owner confirmed pages 5 and 6 opened without native wallet approvals or another app fee approval. Continue reading created no new purchase after the requested stopping check. The reply did not supply a final total, resumed page or measured close duration; none is inferred. Session expiry and monthly allowance consumption are separate, still-open checks.
+
+**Next: instrumented phone timing cohort.** Refresh once, resume an owned Holmes page, then choose wallet menu ? Reading timings. Select BSV Browser and installed version 1.6.3, then Start capture. This cannot buy a page. Close the panel, use Pages to request new page 7 and approve the app ceiling once. Explicitly turn through pages 7?26: 20 new pages, at most 560 sats total (5 seller + up to 23 miner fee each), excluding any separately requested permission grant. Stop on a new paid grant, higher/unknown fee or uncertain payment; preserve the attempt and export, never replace it. Stop capture and export JSON from the same menu; preserve slow and failed attempts. A sub-second impression is not a ?500-ms p95 result. Desktop gets a separate cohort after its 100 sats/kB rate is confirmed; use unowned pages 27?46 to avoid historical page-7 uncertainty. No capture or agent action buys pages automatically.
 
 ## Historical device evidence, 2 November
 

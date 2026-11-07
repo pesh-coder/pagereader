@@ -50,3 +50,15 @@ Full suite: **87 passed, 0 failed**. Added gateway tests for consecutive turns, 
 The owner subsequently confirmed that phone owned-page resume still displays the same **28-sat total**. This closes that read-only resume/counter check; the reply did not state the two wallet Activity statuses, so their local proof refresh is not assumed complete.
 
 Still open: native wallet status refresh; supported same-identity cross-device resume; native session approval/allowance enforcement; paid p95; remaining negative, recovery, race and stopping tests; 90-second demo and team receipt. Recorded spending already matches the supplied Desktop and phone records, but broader failure/pending accounting still needs verification.
+
+## Phone repeat turns and stopping: owner confirmation
+
+The owner confirmed the pages 5/6 test succeeded with only the app fee consent, no native wallet approval on either page. They also reported no new purchase when Continue reading was used after the requested stopping check. This closes the narrow silent-repeat and resume/no-new-purchase observations. No final counter, resumed page number, exact close duration or wallet allowance readback was supplied; these are not invented. This does not turn the monthly wallet grant into session scope.
+
+## Hosted cross-identity rejection: pass
+
+At 2026-11-07T12:54:51.530Z, `scripts/check-hosted-replay.ts` used the original phone page-3 proof against the hosted reader under a synthetic unfunded SDK identity. Both submissions returned 409 with no paragraphs. That caller's page-3 status before/after remained `{purchase:null,intent:null}`. Payment methods were guarded and forbidden-call count was zero. The original receiver identity was checked against the hosted manifest before reading its proof. No new transaction, grant or broadcast was created. This establishes cross-identity refusal only; it does not establish native concurrency, valid underpayment refusal or global database immutability.
+
+## Production timing export
+
+Added an optional connected-wallet menu capture for request-to-visible-frame timing, sanitized wallet/HTTP stages and accepted receipts. Native app name/version are entered explicitly rather than inferred from the wallet protocol version. Reload/close retains incomplete evidence and stops recording. New paid samples require a successful payment workflow and a unique matching accepted receipt; free pages, owned reads and recovery cannot inflate the cohort. Export contains public identity/transaction IDs, not keys or BEEF. Start/stop/export cannot call a payment method. Three capture tests plus the prior suite pass: 90 total. These tests use synthetic data and are not native latency evidence.
