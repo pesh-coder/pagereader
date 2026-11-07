@@ -42,6 +42,8 @@ FAIL means an observed miss remains open. UNRESOLVED means the complete acceptan
 
 ## Work still needed
 
+Known-ancestor handling and complete proof restoration are implemented, alongside unsigned recovery for matched accepted unmined payments and removal of a redundant fresh-page status request. All 105 tests pass. This does not upgrade C3: the latest native median remains 6.51 seconds, and receiver acceptance latency remains open. The next native check is one bounded page-33 pilot, not another cohort. [Implementation](../spike/evidence/payment-ancestry-fix-2026-11-07.md).
+
 **Implementation or stack gaps**
 
 - Meet the retained session approval requirement through supported wallet behavior. The monthly grant is a documented gap, not a session pass; no wallet modification is in scope.

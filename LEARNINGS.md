@@ -79,6 +79,8 @@ The native Browser capture now contains **13 new paid turns, pages 20?32**. Medi
 
 Page 20 recovered, but page 33 then failed with the specific wallet error **Maximum BEEF depth exceeded. Limit is 12**. The new diagnostics confirm that cause for page 33; page 20 originally saved only a general code. The wallet is reaching a payment-proof dependency limit, separate from page price and allowance. The run also contains a 30-second timeout at page 28, which later succeeded. All failures and recovery checks are retained; they are not additional accepted charges. The original page-33 attempt stays guarded. Further paid tests are paused while supported wallet proof/coin-selection behavior and receiver acceptance latency are investigated. Waiting for mining would not satisfy seamless 500-ms reading.
 
+**Fix implemented, native check pending:** BRC-105 now lets the wallet reuse earlier payments declared by the server. The app keeps complete proofs for fee checks and recovery, and the server restores and verifies compact submissions. Fresh browsers can retrieve only their own retained proofs. Fresh turns also omit one redundant status request. Unsigned recovery recognises unmined payments only when matched to accepted receipts. All 105 tests pass; the receiver's two-second acceptance delay and the 500-ms target remain open. [Implementation and next check](spike/evidence/payment-ancestry-fix-2026-11-07.md).
+
 ## 3. When the wallet prompts
 
 **“Approve 5,000 sats this session” is not what we observed.** On Desktop 3.1.1.0:
