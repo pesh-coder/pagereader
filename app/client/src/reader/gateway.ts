@@ -62,6 +62,7 @@ export interface ReaderGateway {
   receipts(): Spend[]
   owned(): Purchase[]
   resumePage(book?: Book): Promise<number | null>
+  needsPaymentCheck(book: Book, page: number): boolean
   hasIdentity(): boolean
   identity(): string | null
   historyState(): HistoryState
@@ -268,6 +269,10 @@ export function createReaderGateway(
     hasIdentity: () => Boolean(wallet),
     identity: () => wallet?.identityKey ?? null,
     walletVersion: () => wallet?.version ?? null,
+    needsPaymentCheck: (book, page) => {
+      const state = book.editionId ? wallet?.getAttempt(book.editionId, page)?.state : undefined
+      return Boolean(state && ['preparing', 'prepared', 'signing', 'signed'].includes(state))
+    },
     network: () => wallet?.network ?? null,
     historyState: () => history,
     async connect(book) {
@@ -435,6 +440,16 @@ export function createReaderGateway(
             })
             attempt = wallet!.getAttempt(edition, page)
           }
+          if (recoveryOnly && attempt?.state === 'preparing' && status.intent?.state === 'challenged' && !status.intent.txid &&
+            ![...loadSpends().values()].some(s => s.identityKey === wallet!.identityKey && s.edition === edition && s.page === page)) {
+            const requestId = status.intent.request_id
+            await wallet!.reconcileUnsignedPreparation(edition, page, requestId, async () => {
+              const current = await readOnly<Status>(api(`status/${page}`))
+              checkedStatus = current
+              return !current.purchase && current.intent?.request_id === requestId && current.intent.state === 'challenged' && !current.intent.txid
+            })
+            attempt = wallet!.getAttempt(edition, page)
+          }
           if (attempt?.proof)
             body = await paidResponse(
               await wallet!.recoverPayment(edition, page, true),
@@ -464,7 +479,9 @@ export function createReaderGateway(
               )
             if (retryable && recoveryOnly)
               throw new ReaderError(
-                attempt?.retryReason === 'insufficient-funds'
+                attempt?.retryReason === 'unsigned-not-created'
+                  ? 'Payment checked: the unsigned wallet request failed before signing, wallet history is completed, and the server still has the original unpaid request. No payment was made by this check. You may retry the same page request.'
+                  : attempt?.retryReason === 'insufficient-funds'
                   ? 'Your wallet needs more funds. Your current page is still available.'
                   : attempt?.retryReason === 'not-started'
                     ? 'Payment checked: the wallet history contains only received funds, with no outgoing transaction. Try purchase again to use the original request. This check did not make a payment.'

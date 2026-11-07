@@ -15,7 +15,7 @@ export interface PaymentAttempt {
     | 'signed'
     | 'confirmed'
     | 'aborted'
-  retryReason?: 'cancelled' | 'insufficient-funds' | 'fee-limit' | 'not-started'
+  retryReason?: 'cancelled' | 'insufficient-funds' | 'fee-limit' | 'not-started' | 'unsigned-not-created'
   walletRequestStarted?: boolean
   lastFailure?: { method: string; code?: number | string }
   broadcast?: { status: 'unproven' | 'sending' | 'failed' | 'unknown'; checkedAt: string }

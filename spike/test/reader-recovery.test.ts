@@ -6,6 +6,7 @@ import {
   type Book,
 } from "../../app/client/src/reader/gateway.js";
 import type { openWallet } from "../src/wallet-client.js";
+import { reconcileUnsignedPreparation } from "../../app/client/src/payments/unsigned-preparation.js";
 import type { PaymentAttempt } from "../src/payment-action.js";
 
 const book: Book = {
@@ -105,6 +106,12 @@ function fixture(t: TestContext) {
         },
       },
       getAttempt: (_edition: string, page: number) => attempt?.page === page && attempt.identityKey === identityKey ? attempt : undefined,
+      reconcileUnsignedPreparation: async (_edition: string, _page: number, id: string, recheck: () => Promise<boolean>) => {
+        assert.equal(callbacks.canSpend(), false);
+        return reconcileUnsignedPreparation({ identityKey, edition: _edition, page: _page, requestId: id,
+          get: () => attempt, save: next => { attempt = next },
+          completedHistory: async () => { if (failReconciliation) throw new Error('Active wallet action'); return 'stable-completed' }, recheck });
+      },
       reconcileUnpaidChallenge: async (_edition: string, _page: number, id: string, recheck: () => Promise<boolean>) => {
         assert.equal(callbacks.canSpend(), false);
         if (failReconciliation) throw new Error("Wallet history could not confirm a received-funds-only wallet");
@@ -159,6 +166,10 @@ function fixture(t: TestContext) {
         state: "submitted",
         txid: purchase.txid,
       };
+    },
+    unsignedFailure: () => {
+      attempt!.walletRequestStarted = true;
+      attempt!.lastFailure = { method: "createAction", code: "WERR_INVALID_OPERATION" };
     },
     savedFailure: () => {
       attempt!.lastFailure = { method: "createAction", code: "MOBILE_FAILURE" };
@@ -378,4 +389,17 @@ test("logout clears active identity while preserving recovery records; failed hi
   assert.equal(f.gateway.historyState(), "error");
   assert.equal(f.gateway.receipts().length, 1);
   assert.equal(f.gateway.receipts()[0].state, "unresolved");
+});
+
+
+test('Check payment reconciles eligible unsigned failure without a charge; only an explicit retry pays the same request', async t => {
+  const f = fixture(t);
+  await f.gateway.library(); f.setAttempt('preparing'); f.unsignedFailure();
+  await f.gateway.connect(book);
+  assert.equal(f.gateway.needsPaymentCheck(book, 3), true);
+  await assert.rejects(f.gateway.page(book, 3, true), error => error instanceof ReaderError && error.action === 'retry' && /No payment was made by this check/.test(error.message));
+  assert.equal(f.counts().creates, 0); assert.equal(f.ids.length, 0);
+  assert.equal(f.gateway.needsPaymentCheck(book, 3), false);
+  await f.gateway.page(book, 3);
+  assert.equal(f.counts().creates, 1); assert.deepEqual(f.ids, [requestId]);
 });

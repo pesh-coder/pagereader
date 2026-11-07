@@ -8,7 +8,8 @@ import {
   broadcastPayment,
   type PaymentAttempt,
 } from './payment-action.js'
-import { readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
+import { reconcileUnsignedPreparation } from './unsigned-preparation.js'
+import { completedHistoryFingerprint, readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
 
 export interface WalletCall {
   method: string
@@ -295,6 +296,15 @@ export async function openWallet(callbacks: {
     version: version.version,
     network: 'mainnet' as const,
     readActionCosts: () => readActionCosts(paymentWallet),
+    async reconcileUnsignedPreparation(edition: string, page: number, requestId: string, recheck: () => Promise<boolean>) {
+      if (!navigator.locks) throw new Error('This browser cannot coordinate unsigned recovery across tabs. The original request was kept.')
+      return navigator.locks.request(lockName, () => reconcileUnsignedPreparation({
+        identityKey, edition, page, requestId,
+        get: () => getAttempt(edition, page),
+        save: attempt => localStorage.setItem(attemptKey(edition, page), JSON.stringify(attempt)),
+        completedHistory: () => completedHistoryFingerprint(wallet), recheck,
+      }))
+    },
     async reconcileUnpaidChallenge(
       edition: string,
       page: number,

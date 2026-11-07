@@ -80,6 +80,15 @@ export async function readActionCosts(
     }))
 }
 
+// Full unfiltered history, not the Activity screen or a page-label subset.
+// Return a stable fingerprint so a concurrent action invalidates recovery.
+export async function completedHistoryFingerprint(wallet: Pick<WalletInterface, 'listActions'>): Promise<string> {
+  const actions = await readHistory(wallet)
+  if (!actions.length || actions.some(action => action.status !== 'completed'))
+    throw new Error('Wallet history still has active or uncertain actions. The original unsigned request was kept; no payment was made.')
+  return JSON.stringify(actions.sort((a, b) => a.txid.localeCompare(b.txid)))
+}
+
 // Narrow reconciliation for a funded wallet that has never spent. Do not use
 // absence of a server receipt, an empty/partial history, or a label filter as
 // evidence that an older wallet payment is safe to replace.

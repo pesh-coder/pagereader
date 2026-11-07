@@ -224,6 +224,10 @@ export default function App() {
       void turn(book, n)
       return
     }
+    if (gateway.needsPaymentCheck(book, n)) {
+      void turn(book, n, true)
+      return
+    }
     if (explained) {
       void turn(book, n, paused)
       return
