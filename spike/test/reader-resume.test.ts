@@ -8,7 +8,87 @@ function memory() {
   const values = new Map<string, string>()
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } }
 }
+function pending<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+function isolatedBrowser(t: import('node:test').TestContext) {
+  const storage = memory()
+  const descriptors = ['localStorage', 'location', 'fetch'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin: 'http://localhost:3108' } })
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, value: async () => new Response(JSON.stringify({ books: [book], purchasesPaused: false })) })
+  t.after(() => { for (const [key, descriptor] of descriptors) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key) })
+  return storage
+}
 const book: Book = { id: 'holmes', gid: 1661, title: 'Holmes', author: 'Doyle', mode: 'reader', editionId: 'fixed-edition', pages: 43, sourceUrl: 'https://www.gutenberg.org/ebooks/1661' }
+
+test('logout while connecting cannot resurrect the wallet or fetch identity history', async t => {
+  isolatedBrowser(t)
+  type Open = typeof import('../src/wallet-client.js')['openWallet']
+  const connection = pending<Awaited<ReturnType<Open>>>()
+  const gateway = createReaderGateway(() => {}, async () => connection.promise)
+  const connecting = gateway.connect(book)
+  gateway.disconnect()
+  connection.resolve({ identityKey: 'late-wallet', auth: { fetch: () => { throw new Error('A closed connection must not fetch history') } } } as unknown as Awaited<ReturnType<Open>>)
+  await assert.rejects(connecting, /connection changed/)
+  assert.equal(gateway.hasIdentity(), false)
+  assert.equal(gateway.historyState(), 'idle')
+})
+
+test('a pending paid response blocks competing reader operations and cannot deliver after logout', async t => {
+  isolatedBrowser(t)
+  type Open = typeof import('../src/wallet-client.js')['openWallet']
+  const delivery = pending<Response>(), started = pending<void>()
+  let starts = 0, confirms = 0
+  const gateway = createReaderGateway(() => {}, async callbacks => ({
+    identityKey: 'fixture-reader',
+    auth: { fetch: async (url: string) => {
+      assert.equal(callbacks.canSpend(), false)
+      assert.ok(new URL(url).pathname.endsWith('/me'))
+      return new Response(JSON.stringify({ identityKey: 'fixture-reader', purchases: [], bookmark: null }))
+    } },
+    getAttempt: () => undefined,
+    beginPayment: () => { starts++ },
+    fetchPaidPage: async () => { assert.equal(callbacks.canSpend(), true); started.resolve(); return delivery.promise },
+    confirmPayment: () => { confirms++ },
+  } as unknown as Awaited<ReturnType<Open>>))
+  await gateway.library()
+  const buying = gateway.page(book, 3)
+  await started.promise
+  for (const competing of [() => gateway.page(book, 4), () => gateway.page({ ...book, editionId: 'other-edition' }, 1),
+    () => gateway.connect(book), () => gateway.resumePage(book), () => gateway.reconcileCosts()])
+    await assert.rejects(competing(), /request is still finishing/)
+  gateway.disconnect()
+  delivery.resolve(new Response(JSON.stringify({ editionId: book.editionId, page: 3, paragraphs: ['Paid original'], purchase: { page: 3, txid: 'original', sats: 5, feeSats: 1 } })))
+  await assert.rejects(buying, /connection changed/)
+  assert.equal(starts, 1); assert.equal(confirms, 0)
+  assert.equal(gateway.hasIdentity(), false)
+  assert.deepEqual(gateway.owned(), [])
+  await gateway.connect(book) // The request lock is released after the original settles.
+  assert.equal(gateway.hasIdentity(), true)
+})
+
+test('logout during native cost reconciliation preserves the original ledger', async t => {
+  const storage = isolatedBrowser(t)
+  type Open = typeof import('../src/wallet-client.js')['openWallet']
+  const history = pending<{ txid: string; debitSats: number; status: string }[]>(), started = pending<void>()
+  const gateway = createReaderGateway(() => {}, async () => ({
+    identityKey: 'fixture-reader',
+    auth: { fetch: async () => new Response(JSON.stringify({ identityKey: 'fixture-reader', purchases: [{ page: 3, txid: 'original', sats: 5, feeSats: 1 }], bookmark: null })) },
+    readActionCosts: async () => { started.resolve(); return history.promise },
+  } as unknown as Awaited<ReturnType<Open>>))
+  await gateway.connect(book)
+  const before = storage.getItem('pagestream-spike-spends-v1')
+  const reconciling = gateway.reconcileCosts()
+  await started.promise
+  gateway.disconnect()
+  history.resolve([{ txid: 'original', debitSats: 6, status: 'completed' }])
+  await assert.rejects(reconciling, /connection changed/)
+  assert.equal(storage.getItem('pagestream-spike-spends-v1'), before)
+  assert.equal(gateway.hasIdentity(), false)
+})
 
 test('two fresh browsers recover the same 74-sat total and exact fees from authenticated receipts without wallet history or local proofs', async t => {
   const descriptors = ['localStorage', 'location'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)

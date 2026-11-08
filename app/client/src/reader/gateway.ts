@@ -116,6 +116,19 @@ export function createReaderGateway(
     allowSpend = false
   let paused = true
   let history: HistoryState = 'idle'
+  let sessionRevision = 0
+  let readerOperationActive = false
+  const exclusive = async <T>(operation: () => Promise<T>): Promise<T> => {
+    if (readerOperationActive)
+      throw new ReaderError('A reader request is still finishing. Please wait before starting another.', 'check')
+    readerOperationActive = true
+    try { return await operation() }
+    finally { readerOperationActive = false }
+  }
+  const requireSession = (selectedWallet: typeof wallet, revision: number) => {
+    if (!selectedWallet || wallet !== selectedWallet || sessionRevision !== revision)
+      throw new ReaderError('The wallet connection changed. Reconnect to check the original payment.', 'connect')
+  }
   let lastWalletFailure: { method: string; code?: number | string; diagnostic?: WalletDiagnostic } | undefined
   let lastHttp: { path: string; status: number } | undefined
   let checkedStatus: Status | undefined
@@ -159,7 +172,8 @@ export function createReaderGateway(
     if (!wallet)
       throw new Error('Request page 3 to access your wallet identity.')
     // AuthFetch cannot create a payment on any read-only route.
-    return json<T>(
+    const selectedWallet = wallet, revision = sessionRevision
+    const result = await json<T>(
       await wallet.auth.fetch(location.origin + path, {
         method,
         paymentRetryAttempts: 1,
@@ -171,6 +185,8 @@ export function createReaderGateway(
             }),
       }),
     )
+    requireSession(selectedWallet, revision)
+    return result
   }
   const refreshMe = async () => {
     const selectedWallet = wallet,
@@ -217,10 +233,11 @@ export function createReaderGateway(
       if (!me && edition) await refreshMe()
       return
     }
+    const revision = sessionRevision
     const openWallet =
       walletOpener ?? (await import('../payments/wallet-client.js')).openWallet
     try {
-      wallet = await openWallet({
+      const connected = await openWallet({
         call: (call) => {
           console.debug('Wallet timing', call)
           try { observer?.wallet(call) } catch { /* Diagnostics cannot interrupt payments. */ }
@@ -236,8 +253,12 @@ export function createReaderGateway(
         currentPage: () => requested,
         canSpend: () => allowSpend,
       })
+      if (revision !== sessionRevision)
+        throw new ReaderError('The wallet connection changed. Reconnect when you are ready.', 'connect')
+      wallet = connected
       changed()
     } catch (error) {
+      if (error instanceof ReaderError) throw error
       console.warn('Wallet acquisition failed', error)
       throw new ReaderError('We couldn’t connect to your wallet.', 'connect')
     }
@@ -247,13 +268,19 @@ export function createReaderGateway(
     response: Response,
     page: number,
   ): Promise<ReaderPage> => {
-    if (response.ok) return json(response)
+    const selectedWallet = wallet, revision = sessionRevision
+    requireSession(selectedWallet, revision)
+    if (response.ok) {
+      const body = await json<ReaderPage>(response)
+      requireSession(selectedWallet, revision)
+      return body
+    }
     allowSpend = false
     const status = await readOnly<Status>(api(`status/${page}`))
     if (status.purchase) return readOnly(api(`owned/${page}`))
     return json(response)
   }
-  return {
+  const gateway: ReaderGateway = {
     async library() {
       const result = await json<{ books: Book[]; purchasesPaused: boolean }>(
         await fetch('/api/library'),
@@ -291,6 +318,7 @@ export function createReaderGateway(
       // Drop only this app's active connection. Durable proofs, ownership and
       // wallet-side grants are never deleted or revoked by logging out.
       allowSpend = false
+      sessionRevision++
       readingFeeConsent = undefined
       wallet = undefined
       me = undefined
@@ -311,11 +339,13 @@ export function createReaderGateway(
           'Open your saved page first to access its wallet history. No payment is needed.',
         )
       const selectedEdition = edition,
+        selectedWallet = wallet, revision = sessionRevision,
         identity = wallet.identityKey
       const costs = new Map(
         (await wallet.readActionCosts()).map((cost) => [cost.txid, cost]),
       )
-      if (edition !== selectedEdition || wallet.identityKey !== identity)
+      requireSession(selectedWallet, revision)
+      if (edition !== selectedEdition)
         throw new Error('The selected book changed. Existing costs were kept.')
       const spends = loadSpends()
       let matched = 0,
@@ -634,5 +664,12 @@ export function createReaderGateway(
         changed()
       }
     },
+  }
+  return {
+    ...gateway,
+    connect: (...args) => exclusive(() => gateway.connect(...args)),
+    resumePage: (...args) => exclusive(() => gateway.resumePage(...args)),
+    reconcileCosts: () => exclusive(() => gateway.reconcileCosts()),
+    page: (...args) => exclusive(() => gateway.page(...args)),
   }
 }
