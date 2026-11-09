@@ -40,7 +40,8 @@ const result = await build({
   ` },
   bundle: true, write: false, outdir: 'offline-fixture', format: 'esm', jsx: 'automatic',
   define: { 'import.meta.env.BASE_URL': '"/"', 'import.meta.env.VITE_PAGESTREAM_READ_AHEAD': '"1"',
-    'import.meta.env.VITE_PAGESTREAM_READ_AHEAD_TARGET': JSON.stringify(identity + '/offline-edition/4') },
+    'import.meta.env.VITE_PAGESTREAM_READ_AHEAD_MODE': '"continuous"',
+    'import.meta.env.VITE_PAGESTREAM_READ_AHEAD_TARGET': '""' },
 })
 const js = result.outputFiles.find(f => f.path.endsWith('.js')).text
 const css = result.outputFiles.find(f => f.path.endsWith('.css')).text

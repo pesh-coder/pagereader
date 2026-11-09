@@ -11,18 +11,28 @@ export interface ReadAheadUse { page: number; readyAtClick: boolean; preparation
 // One accepted page in memory, never a new payment implementation. Every purchase
 // still goes through the gateway's durable proof, fee, broadcast and receipt checks.
 export function withReadAhead(source: ReaderGateway, changed: () => void, clock = () => performance.now(),
-  permitted: (identity: string, edition: string, page: number) => boolean = () => true) {
+  permitted: (identity: string, edition: string, page: number) => boolean = () => true,
+  freshOnly = true) {
   let consent: { identity: string; edition: string } | undefined
   let lastUse: ReadAheadUse | undefined
-  let slot: {
+  type Slot = {
     identity: string; edition: string; page: number; promise: Promise<ReaderPage>
     state: 'preparing' | 'ready' | 'failed'; preparationMs?: number
-  } | undefined
+    discardWhenSettled?: boolean
+  }
+  let slot: Slot | undefined
   const matches = (book: Book, page: number) => Boolean(slot && slot.identity === source.identity() &&
     slot.edition === book.editionId && slot.page === page)
   const idle = async () => { if (slot?.state === 'preparing') await slot.promise.catch(() => {}) }
-  const stop = () => { consent = undefined; changed() }
-  const boundary = async <T>(operation: () => Promise<T>) => { stop(); await idle(); return operation() }
+  const stop = (discard = false) => {
+    consent = undefined
+    if (discard && slot) {
+      slot.discardWhenSettled = true
+      if (slot.state !== 'preparing') slot = undefined
+    }
+    changed()
+  }
+  const boundary = async <T>(operation: () => Promise<T>) => { stop(true); await idle(); return operation() }
   const gateway = {
     ...source,
     readAheadStatus(): ReadAheadStatus {
@@ -53,7 +63,7 @@ export function withReadAhead(source: ReaderGateway, changed: () => void, clock 
         return
       }
       const started = clock()
-      const current = { identity: identity!, edition: book.editionId!, page,
+      const current: Slot = { identity: identity!, edition: book.editionId!, page,
         state: 'preparing' as 'preparing' | 'ready' | 'failed',
         promise: undefined as unknown as Promise<ReaderPage>, preparationMs: undefined as number | undefined }
       slot = current
@@ -61,14 +71,15 @@ export function withReadAhead(source: ReaderGateway, changed: () => void, clock 
         // A hide/logout/disable before this microtask must not start a purchase.
         if (!consent || consent.identity !== source.identity() || consent.edition !== book.editionId)
           throw new Error('Next-page preparation stopped before payment started.')
-        if (source.owned().some(p => p.page === page) || source.needsPaymentCheck(book, page))
+        const alreadyOwned = source.owned().some(p => p.page === page)
+        if ((freshOnly && alreadyOwned) || source.needsPaymentCheck(book, page))
           throw new Error('The next page is already owned or has an existing payment. Preparation stopped without a new purchase.')
         const status = await source.preparationStatus?.(book, page)
-        if (status && status !== 'clear')
+        if (status === 'existing' || (freshOnly && status === 'owned'))
           throw new Error('The next page is already owned or has an existing payment. Preparation stopped without a new purchase.')
         if (!consent || consent.identity !== source.identity() || consent.edition !== book.editionId)
           throw new Error('Next-page preparation stopped before payment started.')
-        return source.page(book, page)
+        return source.page(book, page, !freshOnly && (alreadyOwned || status === 'owned') ? true : undefined)
       }).then(body => {
         if (source.identity() !== current.identity || body.editionId !== current.edition ||
           body.page !== current.page || !body.purchase ||
@@ -80,7 +91,11 @@ export function withReadAhead(source: ReaderGateway, changed: () => void, clock 
         current.state = 'failed'
         consent = undefined
         throw error
-      }).finally(() => { current.preparationMs = clock() - started; changed() })
+      }).finally(() => {
+        current.preparationMs = clock() - started
+        if (current.discardWhenSettled && slot === current) slot = undefined
+        changed()
+      })
       changed()
       return current.promise
     },
@@ -101,6 +116,7 @@ export function withReadAhead(source: ReaderGateway, changed: () => void, clock 
       }
       // Back/contents navigation must not overlap the original payment. Keep
       // its receipt/journal even when the user chooses a different page.
+      if (slot) stop(true)
       await idle()
       return source.page(...args)
     },
@@ -108,7 +124,7 @@ export function withReadAhead(source: ReaderGateway, changed: () => void, clock 
     resumePage: (...args: Parameters<ReaderGateway['resumePage']>) => boundary(() => source.resumePage(...args)),
     reconcileCosts: () => boundary(() => source.reconcileCosts()),
     async bookmark(...args: Parameters<ReaderGateway['bookmark']>) { await idle(); return source.bookmark(...args) },
-    disconnect() { stop(); source.disconnect() },
+    disconnect() { stop(true); source.disconnect() },
   }
   return gateway
 }

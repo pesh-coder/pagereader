@@ -124,7 +124,10 @@ export class ReadingTimings {
     if (!sample.accepted && this.run?.runId === runId)
       this.run.errors.push(`Page ${sample.page} preparation failed or has no confirmed receipt; review the original payment.`)
     this.preparation = undefined
-    if (this.run?.runId === runId) this.save()
+    if (this.run?.runId === runId) {
+      this.recordLedger(ledger)
+      this.save()
+    }
   }
   prepared(token: string | undefined, value: ReadAheadUse | undefined) {
     if (!token || token !== this.current?.token || !value || value.page !== this.current.sample.page ||
@@ -148,8 +151,7 @@ export class ReadingTimings {
     sample.purchased = sample.trigger === 'explicit' && workflow.length === 1 && workflow[0].ok && receipt.length === 1 &&
       !this.run.samples.some(s => s !== sample && s.purchased && s.txid === txid)
     // Export selected receipt fields only; no wallet arguments, proofs or request IDs.
-    this.run.ledger = ledger.map(s => ({ txid: s.txid, identityKey: s.identityKey, edition: s.edition,
-      page: s.page, sats: s.sats, feeSats: s.feeSats, state: s.state }))
+    this.recordLedger(ledger)
     if (context.identityKey !== this.run.identityKey || context.edition !== this.run.edition || context.network !== 'mainnet')
       this.run.errors.push('Wallet identity, book or network changed during capture.')
     if (!visible) this.run.errors.push(`Page ${sample.page} did not reach a visible frame.`)
@@ -172,6 +174,19 @@ export class ReadingTimings {
     this.save()
   }
   paidCount() { return this.run?.samples.filter(s => s.purchased && s.visible).length ?? 0 }
+  prepaidCount() {
+    const run = this.run
+    if (!run) return 0
+    return new Set((run.preparations ?? []).filter(p => p.accepted && !p.failed && p.txid &&
+      p.walletCalls.filter(c => c.method === 'page payment workflow' && c.ok).length === 1 &&
+      run.ledger.some(s => s.txid === p.txid && s.page === p.page && s.edition === p.edition &&
+        s.identityKey === run.identityKey && s.sats === 5 && s.state === 'confirmed')).map(p => p.txid)).size
+  }
+  preparedTurnCount() { return this.run?.samples.filter(s => s.readAhead && s.visible && !s.failed).length ?? 0 }
+  private recordLedger(ledger: Spend[]) {
+    if (this.run) this.run.ledger = ledger.map(s => ({ txid: s.txid, identityKey: s.identityKey, edition: s.edition,
+      page: s.page, sats: s.sats, feeSats: s.feeSats, state: s.state }))
+  }
   export() {
     if (!this.run) throw new Error('No reading capture is available.')
     return JSON.stringify(this.run, null, 2)

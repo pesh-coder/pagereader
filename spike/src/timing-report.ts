@@ -5,12 +5,15 @@ interface Sample {
   page?: number; edition?: string; identityKey?: string; txid?: string
   purchased?: boolean; visible?: boolean; totalMs?: number; trigger?: string
   timingBoundary?: string; network?: string; walletCalls?: Call[]
+  readAhead?: { page: number; readyAtClick: boolean; preparationMs: number }
 }
 interface Run {
   schema?: number; runId?: string; walletName?: string; walletVersion?: string
   origin?: string; edition?: string; identityKey?: string; network?: string
   samples?: Sample[]; ledger?: { txid: string; identityKey: string; edition?: string; page: number; sats: number; state: string }[]
   errors?: unknown[]; prompts?: unknown[]
+  preparations?: { page: number; edition: string; totalMs?: number; txid?: string;
+    accepted?: boolean; failed?: boolean; walletCalls: Call[] }[]
 }
 
 // Statistical output is descriptive. Acceptance also needs a complete,
@@ -20,6 +23,16 @@ export function timingReport(run: Run) {
   const paid = run.samples.filter(sample => sample.purchased === true)
   const durations = paid.filter(sample => sample.visible === true && Number.isFinite(sample.totalMs) && sample.totalMs! >= 0).map(sample => sample.totalMs!).sort((a, b) => a - b)
   const percentile = (p: number) => durations.length ? durations[Math.ceil(p * durations.length) - 1] : null
+  const aheadPayments = new Set((run.preparations ?? []).filter(prep => prep.accepted && !prep.failed && prep.txid &&
+    prep.edition === run.edition && prep.walletCalls.filter(c => c.method === 'page payment workflow' && c.ok).length === 1 &&
+    run.ledger?.some(s => s.txid === prep.txid && s.page === prep.page && s.edition === prep.edition &&
+      s.identityKey === run.identityKey && s.sats === config.priceSats && s.state === 'confirmed')).map(prep => prep.txid))
+  const preparedTurns = run.samples.filter(s => s.readAhead && s.readAhead.page === s.page && s.visible === true &&
+    s.edition === run.edition && s.identityKey === run.identityKey && Number.isFinite(s.totalMs) && s.totalMs! >= 0 &&
+    Number.isFinite(s.readAhead.preparationMs) && s.readAhead.preparationMs >= 0 &&
+    run.ledger?.some(p => p.txid === s.txid && p.page === s.page && p.edition === s.edition &&
+      p.identityKey === s.identityKey && p.state === 'confirmed'))
+  const readyMs = preparedTurns.filter(s => s.readAhead!.readyAtClick).map(s => s.totalMs!).sort((a,b) => a-b)
   const reasons: string[] = []
   if (run.schema !== 2) reasons.push('Legacy export lacks per-payment provenance; statistics are descriptive only.')
   if (!['BSV Desktop', 'BSV Browser'].includes(run.walletName ?? '') || !run.walletVersion?.trim()) reasons.push('Wallet app name/version is missing.')
@@ -51,6 +64,10 @@ export function timingReport(run: Run) {
     runId: run.runId, walletName: run.walletName, walletVersion: run.walletVersion, origin: run.origin,
     paidSamples: paid.length, eligiblePaidSamples, descriptiveTimedSamples: durations.length,
     p50Ms: percentile(0.5), p95Ms: percentile(0.95), qualificationIssues: reasons,
+    readAhead: { paymentsAhead: aheadPayments.size, preparedTurns: preparedTurns.length,
+      readyTurns: readyMs.length, readyClickP95Ms: readyMs.length ? readyMs[Math.ceil(readyMs.length * .95) - 1] : null,
+      preparationMs: preparedTurns.map(s => s.readAhead!.preparationMs),
+      limitation: 'Descriptive preparation/Next timings. A prepaid hit does not prove payment completed within the click; retain rapid/failed turns and both native cohorts.' },
     C3: reasons.length ? 'UNRESOLVED' : percentile(0.95)! <= config.targetP95Ms ? 'PASS (this wallet run only)' : 'FAIL (this wallet run)',
     C2: 'UNRESOLVED — manual prompt completeness, clean grants, scope and reopen review required',
     C8: 'UNRESOLVED — compare both device identities and displayed-page evidence',

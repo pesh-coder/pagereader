@@ -18,10 +18,14 @@ import { BookText } from './reader/components/BookText'
 import { Library } from './reader/components/Library'
 import { SpendingPanel } from './reader/components/SpendingPanel'
 import { withReadAhead } from './reader/read-ahead'
+import { readAheadPermitted } from './reader/read-ahead-policy'
 
 // Reviewable opt-in experiment. Ordinary production builds keep it unavailable.
 const readAheadAvailable = import.meta.env.VITE_PAGESTREAM_READ_AHEAD === '1'
 const readAheadTarget = import.meta.env.VITE_PAGESTREAM_READ_AHEAD_TARGET ?? ''
+const readAheadMode = import.meta.env.VITE_PAGESTREAM_READ_AHEAD_MODE ?? 'scoped'
+const permitReadAhead = (identity: string, edition: string, page: number) =>
+  readAheadPermitted(readAheadAvailable, readAheadMode, readAheadTarget, identity, edition, page)
 
 export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderGateway } = {}) {
   const [, invalidate] = useState(0)
@@ -30,7 +34,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     withReadAhead(gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
       wallet: call => timings.wallet(call), http: call => timings.http(call),
     }), () => invalidate((n) => n + 1), () => performance.now(),
-    (identity, edition, page) => readAheadTarget === `${identity}/${edition}/${page}`),
+    permitReadAhead, readAheadMode !== 'continuous'),
   )
   const [books, setBooks] = useState<Book[]>([])
   const [book, setBook] = useState<Book | null>(null)
@@ -69,7 +73,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   useEffect(() => {
     if (!readAheadAvailable || !readAhead.enabled || !book || !page || busy || paused ||
       document.visibilityState !== 'visible' || readAhead.state !== 'idle' ||
-      readAheadTarget !== `${gateway.identity()}/${book.editionId}/${page.page + 1}`) return
+      !permitReadAhead(gateway.identity() ?? '', book.editionId ?? '', page.page + 1)) return
     const timer = window.setTimeout(() => {
       const revision = viewRevision.current
       const preparationToken = timings.beginPreparation(page.page + 1, book.editionId ?? '')
@@ -203,7 +207,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   function openBook(selected: Book) {
     if (busy) return
     viewRevision.current++
-    gateway.stopReadAhead()
+    gateway.stopReadAhead(true)
     setCostMessage('')
     if (selected.mode === 'excerpt') {
       setBook(selected)
@@ -262,6 +266,10 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   }
   function request(n: number) {
     if (!book || busy || n < 1 || n > (book.pages ?? 0)) return
+    if (page && n !== page.page + 1) {
+      viewRevision.current++
+      gateway.stopReadAhead(true)
+    }
     if (n <= config.freePages || owns(n)) {
       void turn(book, n)
       return
@@ -358,7 +366,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             disabled={busy}
             onClick={() => {
               viewRevision.current++
-              gateway.stopReadAhead()
+              gateway.stopReadAhead(true)
               setBook(null)
               setPage(null)
               close()
@@ -400,7 +408,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             />
           </div>
         </div>
-        {timings.run && <div className="reading-tools"><button className="quiet" onClick={() => setPanel('timings')} aria-live="polite">{timings.run.recording ? 'Recording' : 'Capture stopped'} ? {timings.paidCount()} new paid turns</button></div>}
+        {timings.run && <div className="reading-tools"><button className="quiet" onClick={() => setPanel('timings')} aria-live="polite">{timings.run.recording ? 'Recording' : 'Capture stopped'} · {timings.paidCount()} paid during Next · {timings.prepaidCount()} paid ahead</button></div>}
         {book && (
           <div className="reading-tools">
             <button
@@ -602,7 +610,11 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               disabled={!page || page.page === book.pages || busy}
               onClick={() => request(page!.page + 1)}
             >
-              {nextPaid ? `Next · ${config.priceSats} sats + fee` : 'Next'} ›
+              {readAhead.page === (page?.page ?? 0) + 1 && readAhead.state === 'ready'
+                ? 'Next · ready'
+                : readAhead.page === (page?.page ?? 0) + 1 && readAhead.state === 'preparing'
+                  ? 'Next · preparing…'
+                  : nextPaid ? `Next · ${config.priceSats} sats + fee` : 'Next'} ›
             </button>
           </nav>
         </>
@@ -627,8 +639,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                     } else gateway.stopReadAhead()
                   }} /> Pay for one next page ahead
               </label>
-              <p className="subtle">While you read, buy and load one next page for 5 sats plus its miner fee, at most {maxCost} sats total. That page may remain unread if you leave. No further page is prepared until you turn. Hiding the reader stops new preparation; an already-started payment may finish. This choice clears when you leave, change books, reload or log out.</p>
-              <p role="status">{readAhead.state === 'ready' ? `Page ${readAhead.page} ready and paid.` : readAhead.state === 'preparing' ? `Preparing page ${readAhead.page}…` : readAhead.state === 'failed' ? 'Preparation stopped. Check the original payment before trying again.' : readAhead.enabled ? 'Waiting for an approved next page. This test prepares only one approved page.' : 'Preparation is off until you choose it.'}</p>
+              <p className="subtle">While you read, buy and load one next page for 5 sats plus its miner fee, at most {maxCost} sats total per page. That page may remain unread if you leave or jump elsewhere. After Next, one following page is prepared. A jump pauses preparation and never buys the skipped pages; already-bought pages remain yours. Hiding the reader stops new preparation; an already-started payment may finish. This choice clears when you leave, jump, change books, reload or log out.</p>
+              <p role="status">{readAhead.state === 'ready' ? `Page ${readAhead.page} ready and paid.` : readAhead.state === 'preparing' ? `Preparing page ${readAhead.page}…` : readAhead.state === 'failed' ? 'Preparation stopped. Check the original payment before trying again.' : readAhead.enabled ? readAheadMode === 'continuous' ? 'The next page will be prepared while you read.' : 'Waiting for the approved test page.' : 'Preparation is off until you choose it.'}</p>
             </section>
           )}
           <div className="setting-row">

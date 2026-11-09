@@ -47,6 +47,25 @@ test('background preparation keeps wallet/HTTP stages separate even when Next jo
   assert.equal(run.preparations[0].accepted, true)
   assert.equal(run.samples[0].walletCalls.length, 0)
   assert.equal(run.samples[0].purchased, false)
+  assert.equal(f.capture.prepaidCount(), 1)
+  assert.equal(f.capture.preparedTurnCount(), 1)
+  assert.equal(timingReport(run).readAhead.paymentsAhead, 1)
+  assert.equal(timingReport(run).readAhead.readyClickP95Ms, null, 'a rapid Next is not a ready-page hit')
+})
+
+test('a payment prepared before any Next is counted and retained with its receipt', () => {
+  const f = fixture(), token = f.capture.beginPreparation(4, 'fixture')
+  f.advance(7459)
+  f.capture.wallet({ method: 'page payment workflow', ms: 1583, ok: true })
+  const txid = 'c'.repeat(64)
+  f.capture.finishPreparation(token, txid, [{ txid, identityKey: f.context.identityKey, edition: 'fixture', page: 4, sats: 5, feeSats: 23, state: 'confirmed' }])
+  assert.equal(f.capture.paidCount(), 0)
+  assert.equal(f.capture.prepaidCount(), 1)
+  assert.equal(f.capture.run?.samples.length, 0)
+  assert.equal(f.capture.run?.ledger[0].txid, txid)
+  assert.equal(timingReport(JSON.parse(f.capture.export())).readAhead.paymentsAhead, 1)
+  f.capture.run!.preparations!.push(f.capture.run!.preparations![0])
+  assert.equal(f.capture.prepaidCount(), 1, 'repeated records cannot inflate payment counts')
 })
 
 test('capture exports report-compatible new payments; owned reads and recovery cannot inflate p95 cohort', () => {

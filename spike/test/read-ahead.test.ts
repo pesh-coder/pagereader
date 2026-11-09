@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { withReadAhead } from '../../app/client/src/reader/read-ahead.js'
+import { readAheadPermitted } from '../../app/client/src/reader/read-ahead-policy.js'
 import type { Book, ReaderGateway, ReaderPage, Purchase } from '../../app/client/src/reader/gateway.js'
 
 const book: Book = { id: 'fixture', gid: 1, title: 'Fixture', author: 'Author', mode: 'reader', editionId: 'edition', pages: 30, sourceUrl: 'https://www.gutenberg.org' }
@@ -25,18 +26,18 @@ function fixture() {
     bookmark: async (_book, page) => { bookmarks.push(page) },
     page: async (selected, page, recovery) => {
       calls++
-      if (page === 4 && selected.editionId === book.editionId && !owned.some(x => x.page === page)) {
+      if (page > 3 && selected.editionId === book.editionId && !owned.some(x => x.page === page)) {
         assert.equal(recovery, undefined)
         notifyStarted()
-        await wait
+        if (page === 4) await wait
         charges++
-        owned.push({ page, txid: 'paid-once', sats: 5, feeSats: 1 })
+        owned.push({ page, txid: page === 4 ? 'paid-once' : `paid-${page}`, sats: 5, feeSats: 1 })
       }
       return { editionId: selected.editionId!, page, paragraphs: ['Accepted text'], purchase: owned.find(x => x.page === page) }
     },
   }
   const gateway = withReadAhead(source, () => {}, () => now)
-  return { gateway, owned, bookmarks, started, preflight: (value: typeof preflight) => { preflight = value }, counts: () => ({ calls, charges }),
+  return { gateway, source, owned, bookmarks, started, preflight: (value: typeof preflight) => { preflight = value }, counts: () => ({ calls, charges }),
     finish: () => { now = 6406; resolve() }, fail: () => reject(new Error('Fixture uncertain payment; retain original')) }
 }
 
@@ -120,6 +121,7 @@ test('logout cannot deliver a late prepared page or start another preparation', 
 test('back navigation and bookmarks wait for the original payment without moving the displayed page early', async () => {
   const f = fixture(); f.gateway.enableReadAhead(book)
   const preparing = f.gateway.prepareNext(book, first)
+  await f.started
   const bookmark = f.gateway.bookmark(book, 3, 100)
   const back = f.gateway.page(book, 3)
   await f.started
@@ -155,4 +157,73 @@ for (const state of ['owned', 'existing'] as const) test(`server preflight ${sta
   await assert.rejects(f.gateway.prepareNext(book, first), /stopped without a new purchase/)
   assert.deepEqual(f.counts(), { calls: 0, charges: 0 })
   assert.equal(f.gateway.readAheadStatus().enabled, false)
+})
+
+test('continuous mode replenishes one page only after Next consumes the prior page', async () => {
+  const f = fixture(), gateway = withReadAhead(f.source, () => {}, () => 0, () => true, false)
+  gateway.enableReadAhead(book)
+  const preparing = gateway.prepareNext(book, first)
+  await f.started; f.finish(); await preparing
+  assert.equal(f.counts().charges, 1)
+  const fourth = await gateway.page(book, 4)
+  await gateway.prepareNext(book, fourth)
+  await gateway.prepareNext(book, fourth)
+  assert.deepEqual(f.counts(), { calls: 2, charges: 2 })
+  assert.equal(gateway.readAheadStatus().page, 5)
+  const fifth = await gateway.page(book, 5)
+  gateway.stopReadAhead()
+  await gateway.prepareNext(book, fifth)
+  assert.equal(f.counts().charges, 2)
+})
+
+test('continuous mode can prepare an already-owned page read-only without another charge', async () => {
+  const f = fixture(); f.owned.push({ page: 4, sats: 5, feeSats: 1, txid: 'old-receipt' }); f.preflight('owned')
+  const gateway = withReadAhead(f.source, () => {}, () => 0, () => true, false)
+  gateway.enableReadAhead(book)
+  await gateway.prepareNext(book, first)
+  assert.equal((await gateway.page(book, 4)).purchase?.txid, 'old-receipt')
+  assert.deepEqual(f.counts(), { calls: 1, charges: 0 })
+})
+
+test('preparation policy distinguishes continuous opt-in builds from exact pilot scope', () => {
+  assert.equal(readAheadPermitted(false, 'continuous', '', 'reader', 'edition', 4), false)
+  assert.equal(readAheadPermitted(true, 'unknown', '', 'reader', 'edition', 4), false)
+  assert.equal(readAheadPermitted(true, 'scoped', 'reader/edition/4', 'reader', 'edition', 5), false)
+  assert.equal(readAheadPermitted(true, 'scoped', 'reader/edition/4', 'reader', 'edition', 4), true)
+  assert.equal(readAheadPermitted(true, 'continuous', '', 'reader', 'edition', 5), true)
+  assert.equal(readAheadPermitted(true, 'continuous', '', 'reader', 'edition', 2), false)
+})
+
+test('jumping to the last page pauses preparation and never buys intervening pages', async () => {
+  const f = fixture(), gateway = withReadAhead(f.source, () => {}, () => 0, () => true, false)
+  gateway.enableReadAhead(book)
+  const preparing = gateway.prepareNext(book, first)
+  await f.started; f.finish(); await preparing
+  assert.equal(f.counts().charges, 1)
+  const last = await gateway.page(book, 30)
+  assert.equal(last.page, 30)
+  assert.equal(gateway.readAheadStatus().enabled, false)
+  assert.deepEqual(f.owned.map(p => p.page), [3, 4, 30])
+  assert.equal(f.counts().charges, 2, 'only the prepared page and explicit destination were bought')
+  const skipped = await gateway.page(book, 4)
+  assert.equal(skipped.purchase?.txid, 'paid-once')
+  assert.equal(f.counts().charges, 2, 'the skipped paid page remains owned and is not charged twice')
+})
+
+test('an in-flight payment is retained on jump, and explicit re-enable can prepare from the new position', async () => {
+  const f = fixture(), gateway = withReadAhead(f.source, () => {}, () => 0, () => true, false)
+  gateway.enableReadAhead(book)
+  const preparing = gateway.prepareNext(book, first)
+  await f.started
+  const jump = gateway.page(book, 6)
+  assert.equal(gateway.readAheadStatus().enabled, false)
+  assert.equal(f.counts().calls, 1)
+  f.finish(); await preparing
+  const sixth = await jump
+  assert.deepEqual(f.owned.map(p => p.page), [3, 4, 6])
+  await gateway.prepareNext(book, sixth)
+  assert.equal(f.counts().charges, 2, 'jump does not silently start preparing another page')
+  gateway.enableReadAhead(book)
+  await gateway.prepareNext(book, sixth)
+  assert.deepEqual(f.owned.map(p => p.page), [3, 4, 6, 7])
 })
