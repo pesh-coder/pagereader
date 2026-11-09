@@ -75,6 +75,7 @@ export interface ReaderGateway {
   approveReadingFees(): void
   savedPage(book: Book): number | null
   reconcileCosts(): Promise<{ matched: number; missing: number }>
+  preparationStatus?(book: Book, page: number): Promise<'clear' | 'owned' | 'existing'>
 }
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -412,6 +413,15 @@ export function createReaderGateway(
           displayedAt,
         })
     },
+    async preparationStatus(book, page) {
+      allowSpend = false
+      if (!wallet || !me || history !== 'ready' || edition !== book.editionId)
+        throw new ReaderError('Open the owned page before preparing another page.', 'connect')
+      const status = await readOnly<Status>(api(`status/${page}`, book.editionId))
+      if (status.purchase || me.purchases.some(p => p.page === page)) return 'owned'
+      if (status.intent || wallet.getAttempt(book.editionId!, page)) return 'existing'
+      return 'clear'
+    },
     async page(book, page, recoveryOnly = false, feeApproval) {
       if (
         book.mode !== 'reader' ||
@@ -670,6 +680,7 @@ export function createReaderGateway(
     connect: (...args) => exclusive(() => gateway.connect(...args)),
     resumePage: (...args) => exclusive(() => gateway.resumePage(...args)),
     reconcileCosts: () => exclusive(() => gateway.reconcileCosts()),
+    preparationStatus: (book, page) => exclusive(() => gateway.preparationStatus!(book, page)),
     page: (...args) => exclusive(() => gateway.page(...args)),
   }
 }

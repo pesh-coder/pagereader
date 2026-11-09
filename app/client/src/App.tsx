@@ -6,6 +6,7 @@ import {
   type Book,
   type ReaderPage,
   type PageFeeApproval,
+  type ReaderGateway,
 } from './reader/gateway'
 import { spendingLabel, summarizeSpending } from './reader/spending'
 import { ReadingTimings } from './reader/timings'
@@ -16,14 +17,20 @@ import { WalletMenu } from './reader/components/WalletMenu'
 import { BookText } from './reader/components/BookText'
 import { Library } from './reader/components/Library'
 import { SpendingPanel } from './reader/components/SpendingPanel'
+import { withReadAhead } from './reader/read-ahead'
 
-export default function App() {
+// Reviewable opt-in experiment. Ordinary production builds keep it unavailable.
+const readAheadAvailable = import.meta.env.VITE_PAGESTREAM_READ_AHEAD === '1'
+const readAheadTarget = import.meta.env.VITE_PAGESTREAM_READ_AHEAD_TARGET ?? ''
+
+export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderGateway } = {}) {
   const [, invalidate] = useState(0)
   const [timings] = useState(() => new ReadingTimings(localStorage))
   const [gateway] = useState(() =>
-    createReaderGateway(() => invalidate((n) => n + 1), undefined, {
+    withReadAhead(gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
       wallet: call => timings.wallet(call), http: call => timings.http(call),
-    }),
+    }), () => invalidate((n) => n + 1), () => performance.now(),
+    (identity, edition, page) => readAheadTarget === `${identity}/${edition}/${page}`),
   )
   const [books, setBooks] = useState<Book[]>([])
   const [book, setBook] = useState<Book | null>(null)
@@ -56,7 +63,38 @@ export default function App() {
     () => localStorage.getItem('pagestream-theme') === 'night',
   )
   const lock = useRef(false)
+  const viewRevision = useRef(0)
   const article = useRef<HTMLElement>(null)
+  const readAhead = gateway.readAheadStatus()
+  useEffect(() => {
+    if (!readAheadAvailable || !readAhead.enabled || !book || !page || busy || paused ||
+      document.visibilityState !== 'visible' || readAhead.state !== 'idle' ||
+      readAheadTarget !== `${gateway.identity()}/${book.editionId}/${page.page + 1}`) return
+    const timer = window.setTimeout(() => {
+      const revision = viewRevision.current
+      const preparationToken = timings.beginPreparation(page.page + 1, book.editionId ?? '')
+      void gateway.prepareNext(book, page).then(prepared => {
+        timings.finishPreparation(preparationToken, prepared?.purchase?.txid, gateway.receipts())
+      }).catch(failure => {
+        timings.finishPreparation(preparationToken, undefined, gateway.receipts())
+        if (revision !== viewRevision.current) return
+        setError(failure instanceof Error ? failure.message : 'Next-page preparation stopped.')
+        setErrorAction(failure instanceof ReaderError ? failure.action : 'check')
+        setPaymentDetails(failure instanceof ReaderError ? failure.details ?? [] : [])
+        setFailedPage(page.page + 1)
+      })
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [book, page, busy, paused, gateway, readAhead.enabled, readAhead.state, timings])
+  useEffect(() => {
+    const stop = () => {
+      if (document.visibilityState !== 'visible') gateway.stopReadAhead()
+    }
+    const leave = () => gateway.stopReadAhead()
+    document.addEventListener('visibilitychange', stop)
+    window.addEventListener('pagehide', leave)
+    return () => { document.removeEventListener('visibilitychange', stop); window.removeEventListener('pagehide', leave) }
+  }, [gateway])
   useEffect(() => {
     let cancelled = false
     gateway
@@ -129,6 +167,7 @@ export default function App() {
     const timingToken = timings.begin(number, selected.editionId ?? '', recoveryOnly)
     try {
       const body = await gateway.page(selected, number, recoveryOnly, approval)
+      timings.prepared(timingToken, gateway.lastReadAheadUse())
       setError('')
       setPaymentDetails([])
       setErrorAction(null)
@@ -163,6 +202,8 @@ export default function App() {
   }
   function openBook(selected: Book) {
     if (busy) return
+    viewRevision.current++
+    gateway.stopReadAhead()
     setCostMessage('')
     if (selected.mode === 'excerpt') {
       setBook(selected)
@@ -186,6 +227,7 @@ export default function App() {
   const owns = (n: number) => gateway.owned().some((p) => p.page === n)
   async function resumeSaved(selected = book, previewIfMissing = false) {
     if (!selected || busy || lock.current) return
+    viewRevision.current++
     lock.current = true
     setBusy(true)
     setError('')
@@ -315,6 +357,8 @@ export default function App() {
             className="quiet"
             disabled={busy}
             onClick={() => {
+              viewRevision.current++
+              gateway.stopReadAhead()
               setBook(null)
               setPage(null)
               close()
@@ -342,6 +386,7 @@ export default function App() {
               busy={busy}
               connect={() => setPanel('wallet')}
               disconnect={() => {
+                viewRevision.current++
                 timings.stop('Wallet disconnected during capture.')
                 gateway.disconnect()
                 setExplained(false)
@@ -570,6 +615,22 @@ export default function App() {
       )}
       {panel === 'appearance' && (
         <Panel title="Text settings" close={close}>
+          {readAheadAvailable && book && page?.purchase && (
+            <section aria-label="Faster page turns">
+              <label>
+                <input type="checkbox" checked={readAhead.enabled} disabled={busy || paused}
+                  onChange={event => {
+                    if (event.target.checked) {
+                      gateway.approveReadingFees()
+                      setExplained(true)
+                      gateway.enableReadAhead(book)
+                    } else gateway.stopReadAhead()
+                  }} /> Pay for one next page ahead
+              </label>
+              <p className="subtle">While you read, buy and load one next page for 5 sats plus its miner fee, at most {maxCost} sats total. That page may remain unread if you leave. No further page is prepared until you turn. Hiding the reader stops new preparation; an already-started payment may finish. This choice clears when you leave, change books, reload or log out.</p>
+              <p role="status">{readAhead.state === 'ready' ? `Page ${readAhead.page} ready and paid.` : readAhead.state === 'preparing' ? `Preparing page ${readAhead.page}…` : readAhead.state === 'failed' ? 'Preparation stopped. Check the original payment before trying again.' : readAhead.enabled ? 'Waiting for an approved next page. This test prepares only one approved page.' : 'Preparation is off until you choose it.'}</p>
+            </section>
+          )}
           <div className="setting-row">
             <span>Text size</span>
             <div>
@@ -680,8 +741,10 @@ export default function App() {
             so a lower fee costs less. Higher or unknown fees stop for review.
           </p>
           <p className="subtle">
-            This app approval lasts until you reload or log out. Each Next click
-            buys only the page you request; we never buy ahead.
+            This app approval lasts until you reload or log out.{' '}
+            {readAheadAvailable
+              ? 'Next buys only the page you request unless you separately enable one-page preparation in Text settings.'
+              : 'Each Next click buys only the page you request; we never buy ahead.'}
           </p>
           <p className="subtle">
             {config.provisional.readerPermissionCopy} Your wallet controls when

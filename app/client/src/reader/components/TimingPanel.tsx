@@ -20,6 +20,7 @@ export function TimingPanel({ timings, start, close, unavailable, changed }: {
     </select></label>
     <label>Installed app version <input value={version} maxLength={40} disabled={timings.run?.recording} onChange={e => setVersion(e.target.value)} /></label>
     <p>{timings.run ? `${timings.run.recording ? 'Recording' : 'Stopped'}: ${timings.paidCount()} new paid turns captured.` : 'No capture yet.'}</p>
+    {timings.run?.samples.some(sample => sample.readAhead) && <p>Prepared-page turns are saved separately in the export with their full preparation time. A prepaid cache hit is not counted as payment completed during the click.</p>}
     <button disabled={timings.run?.recording || Boolean(unavailable) || !version.trim()} onClick={() => {
       try { start(name, version); setMessage('Capture started. Close this panel and turn pages normally.'); setExported(''); changed() }
       catch (e) { setMessage(e instanceof Error ? e.message : 'Capture could not start.') }

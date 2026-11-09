@@ -165,10 +165,11 @@ test('independent clients cannot create a second payment while the original appr
 })
 
 
-test('BRC-105 hints sustain 16 chained payments while the receiver and durable proof remain complete', async t => {
+test('BRC-105 hints sustain 24 chained payments and reconnect without charging for owned pages', async t => {
   const f = await fixture(t, { chainPayments: true })
   const auth = f.auth()
-  for (let page = 3; page <= 18; page++) {
+  const paidTurns = 24
+  for (let page = 3; page < 3 + paidTurns; page++) {
     const response = await auth.fetch(f.base + '/api/pages/' + page, { headers: { 'x-bsv-request-id': crypto.randomUUID() }, paymentRetryAttempts: 1 })
     assert.equal(response.status, 200)
     const body = await response.json(), saved = JSON.parse(f.store.proof(body.purchase.txid)!.proof)
@@ -178,8 +179,20 @@ test('BRC-105 hints sustain 16 chained payments while the receiver and durable p
   assert.equal(f.hintCounts[0], 0)
   assert.ok(f.hintCounts.slice(1).every(count => count > 0 && count <= 8))
   assert.ok(f.paymentSizes.at(-1)! < 1000, 'HTTP proof stays bounded instead of resending the whole chain')
-  assert.deepEqual(f.counts(), { creates: 16, internalizes: 16 })
-  const history = await auth.fetch(f.base + '/api/me?ancestors=1')
+  assert.deepEqual(f.counts(), { creates: paidTurns, internalizes: paidTurns })
+  const receipts = f.store.purchases(f.identity, f.edition.id)
+  assert.equal(receipts.length, paidTurns)
+  assert.equal(new Set(receipts.map(receipt => receipt.txid)).size, paidTurns)
+  assert.equal(receipts.reduce((sum, receipt) => sum + receipt.sats + receipt.feeSats!, 0), paidTurns * 6)
+  // A fresh authenticated client must reuse the durable receipts, not pay again.
+  const reconnected = f.auth()
+  for (const page of [3, 3 + paidTurns - 1]) {
+    const owned = await reconnected.fetch(f.base + '/api/owned/' + page)
+    assert.equal(owned.status, 200)
+    assert.equal((await owned.json()).purchase.txid, receipts.find(receipt => receipt.page === page)!.txid)
+  }
+  assert.deepEqual(f.counts(), { creates: paidTurns, internalizes: paidTurns })
+  const history = await reconnected.fetch(f.base + '/api/me?ancestors=1')
   assert.equal(history.status, 200)
   const pool = (await history.json()).paymentAncestors
   assert.ok(pool.length > 0 && pool.length <= 8)

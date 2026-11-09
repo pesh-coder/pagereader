@@ -1,0 +1,46 @@
+# Latency solution candidate: one-page preparation
+
+Only item 1 remains active. Items 2 and 3 retain the owner's acceptance decisions. This work spends no sats and does not migrate chains, wallets, storage providers or receiving identities.
+
+## What the documentation establishes
+
+| Source | Finding and implication |
+|---|---|
+| [BSV BRC-105](https://github.com/bsv-blockchain/BRCs/blob/master/payments/0105.md) | The receiver validates payment before serving the purchased response. Keep that boundary; do not deliver unpaid text or skip receiver acceptance for a better timing number. |
+| [BSV action-batch planning](https://github.com/bsv-blockchain/ts-stack/blob/main/packages/wallet/wallet-toolbox/docs/action-batch-planning.md) | Negotiated no-send workspaces reduce repeated storage calls and commit through sendWith. This is wallet/provider behavior, not an app flag that upgrades installed native wallets. Its dependent-action benchmarks do not promise one-page end-to-end latency. The previous server-wallet combined no-send experiment did not establish a qualifying native speedup. |
+| [BSV SDK performance](https://github.com/bsv-blockchain/ts-stack/blob/main/packages/sdk/docs/performance.md) | Typed bytes, BEEF caching, bounded ancestor fetches and optional faster verification address specific costs. Wire benchmarks exclude the app's real remote processor/storage wait. Native wallet/provider upgrades require compatible supported deployment. |
+| [Solana payment verification](https://solana.com/docs/payments/accept-payments/verification-tools) | Merchant guidance warns that processed transactions can be dropped and recommends confirmed status before fulfillment, described as 1-2 seconds. The marketing 400-ms figure does not establish this app's full payment-to-content target. Migrating also replaces the required BRC-100 wallets and sats pricing; no migration was performed. |
+| [Hedera transaction receipts](https://docs.hedera.com/native/transactions/receipt), [Hedera network explanation](https://hedera.com/learning/how-hedera-works/) | Receipts determine whether consensus succeeded; the network explanation describes finality in seconds. These sources do not establish sub-500-ms end-to-end wallet payment and delivery. Receipt queries are distinct from submitting a payment. No Hedera accounts/keys/funding were created. |
+
+Inference: the portable useful approach is to do the payment work while the reader is reading, rather than infer app latency from a chain's advertised throughput or block time. The original POC explicitly suggests paying for the next page on the current page. Payment channels/batching or chain migration are not drop-in changes to the installed wallet contract and original per-page mainnet story.
+
+## Implemented candidate
+
+An optional one-page read-ahead controller wraps the existing reader gateway. It does not implement a second payment protocol. The existing fee ceiling, original durable request/proof, checked broadcast, receiver internalization and accepted receipt all finish before text enters the in-memory slot.
+
+- Off by default and not persisted. The production option requires `VITE_PAGESTREAM_READ_AHEAD=1`; preparing also requires `VITE_PAGESTREAM_READ_AHEAD_TARGET` to match the exact public identity/edition/page. Empty/unmatched target cannot prepare a payment. No hosting flag was set and no deployment was performed here.
+- The user explicitly chooses **Pay for one next page ahead** in Text settings on an owned paid page. The disclosure states 5 sats plus actual miner fees, up to 28 total, and that the page may remain unread if they leave. Enabling grants the existing app fee consent, not a new native wallet session limit.
+- Only one unread page is prepared. Staying on the current page cannot prepare additional pages. The current bookmark changes only on actual display. The running spend records an accepted preparation immediately, even before that page is read.
+- A ready Next uses the already accepted body in memory. A rapid Next joins the existing promise and retains the remaining wait. It never creates a second purchase or pretends a slow preparation was instant.
+- Book changes, hiding, leaving, disable, reload and logout stop further scheduling. An already-started transaction may complete; its receipt/journal is retained. Foreground navigation, resume and accounting wait for an outstanding preparation. An uncertain/failed preparation stops automatic purchases and preserves the original failure for explicit checking.
+- Timing exports include `readAhead.readyAtClick` and full `preparationMs`. Existing qualification still requires a payment workflow within the click boundary: a ready prepaid hit is not relabeled as a 500-ms new-payment result. This candidate addresses perceived next-page latency, not the measured native transaction duration, first-purchase latency or a guarantee for rapid clicks.
+
+## Verification
+
+The offline App fixture (`node spike/scripts/preview-read-ahead.mjs`) uses synthetic receipts and a 6,406-ms artificial payment delay, with no wallet acquisition, keys, provider setup or broadcast. A 390x844 browser run prepares exactly page 4 while page 3 remains displayed: synthetic total increases from 28 to 56; the displayed bookmark remains 3. Next-to-two-visible-frames measured **21.9 ms** in one ready-page sample. It then displays page 4, bookmark becomes 4, and the fixture still records exactly one synthetic payment. The exact page target prevents preparing page 5. No wallet-client bundle was loaded. Desktop and portrait checks show no horizontal overflow; portrait navigation is visible.
+
+This is functional UI evidence with a simulated delay, not a native-wallet benchmark, qualifying p95, or a promise of production speed. Unit/integration checks cover default-off behavior, original fee consent/receipt reuse, single unread slot, rapid Next, errors without automatic retry, logout/disable, serialized navigation/bookmarks, free/foreign/final-page exclusion, exact pilot scope and honest timing classification. The final full suite passes **134 tests**, server/client builds and client lint pass. Full outputs and the UI result are retained locally under `spike/evidence/runs/read-ahead-*`.
+
+Background wallet/HTTP spans are retained under the capture's separate `preparations` array, including full elapsed duration and accepted txid/receipt status. A Next click during that work cannot absorb the payment workflow into a misleading faster click sample. Failed preparations remain failures in the capture. The ordinary C3 checker is unchanged and cannot pass a ready prepaid hit as a new payment completed within the click.
+
+## Reviewable next step: one native page, not another cohort
+
+Proposed pilot: existing Browser identity `030ddc151d6a23c8cb56bebdc53cbfbdd849d3e8f5fe5d08e73dab79e77b1c7f57`, Holmes edition `1661-922e2a12ccb43a4c9544c260b2166c6ad2097aeb5957faeee113f173bb857cd0-paragraphs-1800-v1`, page **36**, maximum **28 sats** including miner fee, no new paid permission grant. First confirm page 36 remains unowned and has no uncertain attempt; otherwise stop and retain that evidence instead of choosing a replacement page. Open owned page 35, opt in, wait for preparation to finish, then Next. The exact target prevents preparing page 37. Disable the pilot after the result; preserve receipts/proofs.
+
+The existing pause on new paid tests remains in force. This proposal is prepared, not authorized or executed. A native pilot must retain preparation duration, ready/not-ready state at click, visible-frame latency, exact original txid/fee and accepted receipt. If rapid clicks are required always to meet 500 ms including a fresh payment, this candidate cannot establish that; the supported wallet/provider path still requires measured improvement. Item 1 remains open pending an accepted mode and native evidence.
+
+## Owner approval and deployment preparation
+
+The owner subsequently explicitly approves **deploying and running the one-page Browser pilot, maximum 28 sats**, starting from owned Holmes page 35 and targeting only page 36, with no new paid permission grant. This supersedes the unpaid-proposal status above for this one test only. Stop if page 36 is already owned or uncertain; do not select another page. `vercel.mjs` now contains the exact public identity/edition/page build target and enable flag. A deployment-scope test checks the complete command, ordinary config remains disabled, and the previous original-transaction overlap stays disabled. Activation and the owner's native result must still be verified; no successful paid pilot is claimed by the approval.
+
+Before payment, the production gateway performs a read-only status preflight. An owned page, any server intent, local attempt or wallet identity/context change stops the pilot without choosing a replacement. Consent is checked again after that lookup. This adds preparation work outside the click path rather than assuming the page is fresh. Tests cover both owned and existing-intent refusals. Late preparation errors cannot replace the visible recovery controls after navigation/logout. Final approved-build verification passes **136 tests**, server/client production builds, client lint and the exact deployment-scope test.
