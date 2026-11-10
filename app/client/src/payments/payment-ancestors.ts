@@ -31,9 +31,37 @@ export function completePaymentProof(raw: number[] | Uint8Array, ancestors: Map<
     if (beef.txs.some(tx => tx.isTxidOnly)) throw new Error('Payment contains an unresolved ancestor')
     return Array.from(raw)
   }
-  for (const source of ancestors.values()) beef.mergeBeef(source)
-  const complete = beef.toBinaryAtomic(txid)
-  if (!Beef.fromBinaryStrict(complete).isValid(false)) throw new Error('Payment contains an unresolved ancestor')
+  // Recent page proofs usually overlap. A larger retained proof often supplies
+  // several earlier subjects, so avoid parsing/merging each full chain again.
+  // This is a greedy heuristic, not a minimum-proof-cover guarantee. Keep the
+  // same complete-proof validation and repair incomplete legacy graphs below.
+  const skipped: number[][] = []
+  const fullSubjects = new Set(beef.txs.filter(tx => !tx.isTxidOnly).map(tx => tx.txid))
+  const ordered = [...ancestors].sort((a, b) => b[1].length - a[1].length)
+  for (let index = 0; index < ordered.length; index++) {
+    const [id, source] = ordered[index]
+    if (fullSubjects.has(id)) skipped.push(source)
+    else {
+      beef.mergeBeef(source)
+      // This call-local index avoids repeated public findTxid mutation scans.
+      for (const tx of beef.txs) if (!tx.isTxidOnly) fullSubjects.add(tx.txid)
+      if (index === 0 && !ordered.slice(1).some(([next]) => fullSubjects.has(next))) {
+        // Disjoint funding branches gain nothing from repeated coverage scans.
+        for (const [, remaining] of ordered.slice(1)) beef.mergeBeef(remaining)
+        break
+      }
+    }
+  }
+  let complete = beef.toBinaryAtomic(txid)
+  let valid = Beef.fromBinaryStrict(complete).isValid(false)
+  if (skipped.length && !valid) {
+    // A full transaction can still lack an input/proof. Restore skipped sources
+    // before rejecting rather than assuming a full subject means a full graph.
+    for (const source of skipped) beef.mergeBeef(source)
+    complete = beef.toBinaryAtomic(txid)
+    valid = Beef.fromBinaryStrict(complete).isValid(false)
+  }
+  if (!valid) throw new Error('Payment contains an unresolved ancestor')
   if (Transaction.fromAtomicBEEF(complete).id('hex') !== txid) throw new Error('Payment transaction changed')
   return complete
 }
