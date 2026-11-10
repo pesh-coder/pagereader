@@ -28,6 +28,7 @@ import type { CatalogueBook, Edition } from "./content.js";
 import { PaymentConflictError, Store } from "./store.js";
 import { requestLimit } from "./request-limits.js";
 import { receivingWallet, type RequestTiming } from "./receiving-wallet.js";
+import { ChannelError, createChannelService, type Broadcast } from "./channel-service.js";
 
 export function createProbe(options: {
   store: Store;
@@ -42,6 +43,8 @@ export function createProbe(options: {
   research?: boolean;
   rateLimits?: boolean;
   knownAncestorsEnabled?: (identity: string) => boolean;
+  /** Reading-session payment channels; absent means the routes do not exist. */
+  channels?: { broadcast: Broadcast; enabled: (identity: string) => boolean; maxCapacity?: number; now?: () => number };
 }) {
   const { store, edition } = options;
   const catalogue = options.catalogue ?? [
@@ -263,7 +266,7 @@ export function createProbe(options: {
       res.sendStatus(404);
       return;
     }
-    res.json(manifest(options.serverIdentity));
+    res.json(manifest(options.serverIdentity, { channels: Boolean(options.channels) }));
   });
   app.get("/icon.svg", (_req, res) =>
     res
@@ -290,7 +293,8 @@ export function createProbe(options: {
       if (
         req.path !== "/.well-known/auth" &&
         !/^\/api\/receiver-latency\/[a-f0-9]{64}$/.test(req.path) &&
-        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+)$/.test(
+        !/^\/api\/(?:channel-pages|channels\/[a-f0-9]{32}\/close)$/.test(req.path) &&
+        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+|channels(?:\/[a-f0-9]{32}(?:\/fund|\/activate)?)?)$/.test(
           req.path,
         )
       ) {
@@ -326,6 +330,55 @@ export function createProbe(options: {
         key: (req) => req.ip ?? req.socket.remoteAddress ?? "unknown",
       }),
     );
+  const channels = options.channels
+    ? createChannelService({
+        store, wallet: options.wallet, broadcast: options.channels.broadcast,
+        enabled: options.channels.enabled, pages: (id) => editions.get(id)?.pages.length,
+        now: options.channels.now, maxCapacity: options.channels.maxCapacity,
+      })
+    : undefined;
+  app.locals.channels = channels;
+  const channelFailure = (res: Response, error: unknown) => {
+    if (error instanceof ChannelError) res.status(error.status).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
+    else res.status(500).json({ error: "Reading session request failed; no new payment was created" });
+  };
+  if (channels) {
+    // A session page is authenticated by the reader's channel signature itself,
+    // so it skips BRC-103 request authentication: one wallet call per page.
+    const channelLimit = requestLimit({
+      limit: 120, windowMs: 60000,
+      key: (req) => String(req.params.channelId ?? req.body?.channelId ?? req.ip),
+    });
+    app.post("/api/channel-pages", channelLimit, (req, res) => {
+      const { channelId, editionId, page, paid, signature } = req.body ?? {};
+      const book = typeof editionId === "string" ? editions.get(editionId) : undefined;
+      if (typeof channelId !== "string" || !book || typeof signature !== "string" ||
+        !Number.isSafeInteger(page) || !Number.isSafeInteger(paid)) {
+        res.status(400).json({ error: "Malformed session payment" });
+        return;
+      }
+      try {
+        const result = db(() => channels.pay(channelId, editionId, page, paid, signature));
+        res.json({
+          editionId, page, paragraphs: book.pages[page - 1], purchase: result.purchase,
+          channel: { paid: result.channel.paid },
+          ...(result.credit ? { credit: { editionId, page: result.credit, paragraphs: book.pages[result.credit - 1] } } : {}),
+          timing: timing(res),
+        });
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    // Beacon-friendly: closing only settles what the reader already signed.
+    app.post("/api/channels/:channelId/close", channelLimit, async (req, res) => {
+      try {
+        const status = await channels.settle(String(req.params.channelId));
+        res.json({ state: status.state, settlementTxid: status.settlementTxid });
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+  }
   app.use((_req, _res, next) => {
     context.getStore()!.authStart = performance.now();
     next();
@@ -365,11 +418,47 @@ export function createProbe(options: {
   app.get(paths("me"), (req, res) =>
     res.json({
       identityKey: identity(req),
+      ...(options.serverIdentity ? { serverIdentity: options.serverIdentity } : {}),
+      ...(channels ? { sessionsEnabled: options.channels!.enabled(identity(req)), sessionMaxSats: channels.ceiling } : {}),
       ...(req.query.ancestors === '1' ? { paymentAncestors: db(() => retainedPaymentAncestors(store, identity(req))) } : {}),
       purchases: db(() => store.purchases(identity(req), editionFor(req).id)),
       bookmark: db(() => store.bookmark(identity(req), editionFor(req).id)),
     }),
   );
+  if (channels) {
+    app.post(paths("channels"), async (req, res) => {
+      if (purchasesPaused()) {
+        res.status(503).json({ error: "New purchases are paused. Owned pages remain available." });
+        return;
+      }
+      try {
+        res.json(await channels.offer(identity(req), editionFor(req).id, req.body?.capacity));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    app.post(paths("channels/:channelId/fund"), async (req, res) => {
+      try {
+        res.json(await channels.fund(identity(req), String(req.params.channelId), req.body ?? {}));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    app.post(paths("channels/:channelId/activate"), async (req, res) => {
+      try {
+        res.json(await channels.activate(identity(req), String(req.params.channelId)));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    app.get(paths("channels/:channelId"), (req, res) => {
+      try {
+        res.json(channels.status(identity(req), String(req.params.channelId)));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+  }
   app.get(paths("status/:page"), (req, res) => {
     const edition = editionFor(req);
     const page = pageNumber(req);

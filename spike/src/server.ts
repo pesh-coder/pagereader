@@ -2,8 +2,9 @@ import http from "node:http";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { PrivateKey, type WalletInterface } from "@bsv/sdk";
-import { SetupClient } from "@bsv/wallet-toolbox-client";
+import { Beef, PrivateKey, type WalletInterface } from "@bsv/sdk";
+import { Services, SetupClient } from "@bsv/wallet-toolbox-client";
+import type { Broadcast } from "./channel-service.js";
 import { createProbe } from "./probe.js";
 import { loadEdition, loadCatalogue } from "./content.js";
 import { Store } from "./store.js";
@@ -49,6 +50,25 @@ if (process.env.SERVER_PRIVATE_KEY) {
   serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey;
 }
 const store = new Store(join(stateDirectory, "spike.sqlite"));
+// Reading sessions stay off unless explicitly enabled for listed identities
+// ("all" opens them to every wallet). Funding and zero-payment settlements are
+// broadcast through the official wallet services; paid settlements are
+// received (and broadcast) by the receiving wallet itself.
+const channelIdentities = (process.env.PAGESTREAM_CHANNEL_IDENTITIES ?? "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+let services: Services | undefined;
+const broadcast: Broadcast = async (atomicBeef, txid) => {
+  services ??= new Services("main");
+  const results = await services.postBeef(Beef.fromBinary(atomicBeef), [txid]);
+  if (!results.some((result) => result.txidResults.some((r) =>
+    r.txid === txid && r.status === "success" && !r.doubleSpend)))
+    throw new Error("Transaction was not accepted for broadcast");
+};
+const channels = wallet && process.env.PAGESTREAM_CHANNELS_ENABLED === "1"
+  ? { broadcast, enabled: (identity: string) =>
+      channelIdentities.includes("all") || channelIdentities.includes(identity),
+      maxCapacity: Number(process.env.PAGESTREAM_CHANNEL_MAX_SATS) || undefined }
+  : undefined;
 const research =
   process.env.NODE_ENV !== "production" &&
   process.env.PAGESTREAM_RESEARCH === "1";
@@ -65,7 +85,11 @@ const app = createProbe({
   knownAncestorsEnabled: identity => process.env.PAGESTREAM_KNOWN_ANCESTORS_ENABLED !== '0' &&
     !(process.env.PAGESTREAM_KNOWN_ANCESTORS_DISABLED_IDENTITIES ?? '').split(',').map(s => s.trim()).includes(identity),
   manifestEnabled: process.env.SPIKE_MANIFEST !== "0",
+  channels,
 });
+const sweep = channels
+  ? setInterval(() => void app.locals.channels.settleIdle().catch(() => {}), 60_000)
+  : undefined;
 const server = http.createServer({ maxHeaderSize: 1024 * 1024 }, app);
 server.listen(port, "0.0.0.0", () =>
   console.log(
@@ -89,6 +113,7 @@ localManifestServer?.listen(80, "127.0.0.1", () =>
   ),
 );
 const stop = () => {
+  clearInterval(sweep);
   localManifestServer?.close();
   server.close(() => {
     store.close();

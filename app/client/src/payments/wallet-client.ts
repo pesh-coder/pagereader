@@ -13,6 +13,7 @@ import {
 import { reconcileUnsignedPreparation } from './unsigned-preparation.js'
 import { recoveryHistoryFingerprint, readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
 import { PaymentDelivery, type DeliveryOutcome } from './payment-delivery.js'
+import type { SessionWallet } from './channel-session.js'
 
 export interface WalletCall {
   method: string
@@ -334,6 +335,12 @@ export async function openWallet(callbacks: {
   )
   return {
     auth,
+    // Reading sessions: timed wallet calls, and a plain timed same-origin POST
+    // for page payments, which are authenticated by their channel signature.
+    sessionWallet: paymentWallet as unknown as SessionWallet,
+    sessionPost: (path: string, body: unknown) => instrumentedFetch(location.origin + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true,
+    }),
     async fetchPaidPage(...args: Parameters<AuthFetch['fetch']>) {
       if (activeDelivery) throw new Error('Another payment delivery is still active')
       const attempt = journal.get()

@@ -30,6 +30,19 @@ export const config = {
       'Your wallet may request a separate saved permission. Review any additional cost before approving.',
     unknownFeeCopy: 'fees not yet measured',
   },
+  // Unidirectional payment channel ("reading session"): one funding approval,
+  // then one wallet signature per page and one settlement when reading stops.
+  channel: {
+    capacitySats: 5000,
+    minCapacitySats: 60,
+    // Reader-funded fee carried by the single settlement (≈265 bytes at 100 sat/kB).
+    settlementFeeSats: 30,
+    refundDelaySeconds: 24 * 60 * 60,
+    // The server settles an untouched session well before the refund unlocks.
+    idleSettleMs: 10 * 60 * 1000,
+    // Pages delivered ahead of payment that were never paid for, per session.
+    maxForfeitedCredits: 2,
+  },
   segmenterVersion: 'paragraphs-1800-v1',
   targetCharacters: 1800,
   timingSampleCount: 20,

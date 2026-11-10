@@ -2,6 +2,7 @@ import { config } from '../payments/config.js'
 import type { WalletDiagnostic } from '../payments/wallet-diagnostic.js'
 import type { Spend, WalletCall, HttpCall } from '../payments/wallet-client.js'
 import { savedBookmark, saveDisplayedBookmark } from './bookmarks.js'
+import type { SessionClient, SessionPage, SessionRecord } from '../payments/channel-session.js'
 
 export { config }
 export type { Spend }
@@ -30,6 +31,9 @@ export interface ReaderPage {
   purchase?: Purchase
 }
 interface Me {
+  serverIdentity?: string
+  sessionsEnabled?: boolean
+  sessionMaxSats?: number
   paymentAncestors?: { txid: string; transaction: string }[]
   identityKey: string
   purchases: Purchase[]
@@ -76,6 +80,22 @@ export interface ReaderGateway {
   savedPage(book: Book): number | null
   reconcileCosts(): Promise<{ matched: number; missing: number }>
   preparationStatus?(book: Book, page: number): Promise<'clear' | 'owned' | 'existing'>
+  sessionStatus?(book: Book): SessionStatus | null
+  sessionsEnabled?(): boolean
+  sessionMaxSats?(): number | null
+  openSession?(book: Book, capacity: number): Promise<void>
+  endSession?(book: Book): Promise<SessionStatus | null>
+  leaveSession?(): void
+  checkSessionSigning?(): Promise<number[]>
+}
+export interface SessionStatus {
+  state: SessionRecord['state']
+  capacity: number
+  paidSats: number
+  pages: number
+  remainingSats: number
+  feeSats: number
+  error?: string
 }
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -136,6 +156,74 @@ export function createReaderGateway(
   // Per-payment fee ceiling only, not a wallet spending budget. Never persisted:
   // reload, logout and another gateway require a new visible approval.
   let readingFeeConsent: { identityKey: string | null; maxFeeSats: number } | undefined
+  // Reading sessions (payment channel). The client module loads with the wallet
+  // bundle. Only sessions opened in this reader visit are used for payment;
+  // older ones are settled and their change received.
+  let session: SessionClient | undefined
+  let sessionError: string | undefined
+  const openedHere = new Set<string>()
+  const sessionClient = async () => {
+    if (!wallet) throw new ReaderError('Connect your wallet first.', 'connect')
+    if (!session) {
+      const { createSessionClient } = await import('../payments/channel-session.js')
+      const selected = wallet
+      session = createSessionClient({
+        wallet: selected.sessionWallet, identityKey: selected.identityKey, storage: localStorage, post: selected.sessionPost,
+        authJson: async <T>(path: string, method: string, body?: unknown) => {
+          const response = await selected.auth.fetch(location.origin + path, {
+            method, paymentRetryAttempts: 1,
+            ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+          })
+          const result = await response.json().catch(() => ({}))
+          if (!response.ok) throw new ReaderError(result.error ?? 'The reading session request failed. Nothing new was paid.', 'check')
+          return result as T
+        },
+      })
+    }
+    return session
+  }
+  const tidySession = (selectedEdition: string) => {
+    const client = session, record = client?.load(selectedEdition)
+    if (!client || !record || openedHere.has(record.channelId)) return
+    const settle = record.state === 'open' ? client.close(selectedEdition) : Promise.resolve(record)
+    if (['open', 'funded', 'closing', 'settled'].includes(record.state))
+      void settle.then(() => client.receiveChange(selectedEdition)).then(changed, () => undefined)
+  }
+  const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
+    const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
+    const identityKey = selectedWallet.identityKey
+    const accept = (body: SessionPage) => {
+      if (wallet !== selectedWallet || sessionRevision !== revision) return
+      const existing = loadSpends().get(body.purchase.txid)
+      saveSpend({ ...existing, ...body.purchase, identityKey, edition: selectedEdition, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
+      if (me && edition === selectedEdition)
+        me.purchases = [...me.purchases.filter(p => p.page !== body.purchase.page), body.purchase]
+    }
+    await client.idle()
+    const record = client.load(selectedEdition)!
+    const credited = record.pending ? undefined : client.takeCredit(selectedEdition, page)
+    sessionError = undefined
+    if (credited && record.terms) {
+      // Show the page delivered with the previous payment now; pay it in the
+      // background. The next page arrives with this payment's response.
+      const paid = record.paid + record.terms.price
+      const purchase = { page, txid: `channel:${record.channelId}:${paid / record.terms.price}`, sats: record.terms.price, feeSats: 0 }
+      saveSpend({ ...purchase, identityKey, edition: selectedEdition, state: 'pending' })
+      void client.pay(selectedEdition, page, accept).catch(error => {
+        sessionError = error instanceof Error ? error.message : 'The page payment failed.'
+        const spend = loadSpends().get(purchase.txid)
+        if (spend?.state === 'pending') {
+          // A definitive refusal paid nothing; a lost request is kept and resent.
+          if ((error as { retryable?: boolean }).retryable) saveSpend({ ...spend, state: 'unresolved' })
+          else dropSpend(purchase.txid)
+        }
+        changed()
+      })
+      return checkPage({ editionId: selectedEdition, page, paragraphs: credited.paragraphs, purchase }, book, page)
+    }
+    const body = await client.pay(selectedEdition, page, accept)
+    return checkPage({ editionId: body.editionId, page: body.page, paragraphs: body.paragraphs, purchase: body.purchase }, book, page)
+  }
   const api = (path: string, selectedEdition = edition) =>
     `/api/editions/${encodeURIComponent(selectedEdition)}/${path}`
   const checkPage = (body: ReaderPage, book: Book, page: number) => {
@@ -162,6 +250,12 @@ export function createReaderGateway(
         'Saved payment history could not be read. Payments are blocked until it is recovered.',
       )
     }
+  }
+  const dropSpend = (txid: string) => {
+    const spends = loadSpends()
+    spends.delete(txid)
+    localStorage.setItem(ledgerKey, JSON.stringify(Object.fromEntries(spends)))
+    changed()
   }
   const saveSpend = (spend: Spend) => {
     const spends = loadSpends()
@@ -257,13 +351,17 @@ export function createReaderGateway(
       if (revision !== sessionRevision)
         throw new ReaderError('The wallet connection changed. Reconnect when you are ready.', 'connect')
       wallet = connected
+      await sessionClient()
       changed()
     } catch (error) {
       if (error instanceof ReaderError) throw error
       console.warn('Wallet acquisition failed', error)
       throw new ReaderError('We couldn’t connect to your wallet.', 'connect')
     }
-    if (edition) await refreshMe()
+    if (edition) {
+      await refreshMe()
+      tidySession(edition)
+    }
   }
   const paidResponse = async (
     response: Response,
@@ -321,6 +419,9 @@ export function createReaderGateway(
       allowSpend = false
       sessionRevision++
       readingFeeConsent = undefined
+      session = undefined
+      sessionError = undefined
+      openedHere.clear()
       wallet = undefined
       me = undefined
       history = 'idle'
@@ -407,11 +508,76 @@ export function createReaderGateway(
     async bookmark(book, page, displayedAt) {
       // Free reading still has a local bookmark without acquiring a wallet.
       saveDisplayedBookmark(book, page, displayedAt)
+      // A page shown on session credit becomes owned when its payment lands.
+      await session?.idle()
       if (wallet && book.mode === 'reader' && book.editionId)
         await readOnly(api('bookmarks', book.editionId), 'PUT', {
           page,
           displayedAt,
         })
+    },
+    sessionsEnabled: () => Boolean(wallet && me?.sessionsEnabled),
+    sessionMaxSats: () => (Number.isSafeInteger(me?.sessionMaxSats) ? me!.sessionMaxSats! : null),
+    sessionStatus(book) {
+      const record = book.editionId && wallet ? session?.load(book.editionId) : undefined
+      if (!record?.terms || record.identityKey !== wallet?.identityKey || record.state === 'abandoned') return null
+      return {
+        state: record.state, capacity: record.terms.capacity, paidSats: record.paid, pages: record.paid / record.terms.price,
+        remainingSats: session!.remaining(record), feeSats: (record.fundingFeeSats ?? 0) + record.terms.settlementFee,
+        ...(sessionError && record.state === 'open' ? { error: sessionError } : {}),
+      }
+    },
+    async openSession(book, capacity) {
+      allowSpend = false
+      if (book.mode !== 'reader' || !book.editionId) throw new Error('This title has no paid pages.')
+      if (edition !== book.editionId) {
+        edition = book.editionId
+        me = undefined
+        history = 'idle'
+      }
+      if (paused) throw new ReaderError('New purchases are temporarily paused. Owned pages remain available.', 'check')
+      await acquire()
+      const client = await sessionClient()
+      try {
+        const record = await client.open(edition, capacity)
+        openedHere.add(record.channelId)
+        sessionError = undefined
+      } catch (error) {
+        throw error instanceof ReaderError ? error
+          : new ReaderError(error instanceof Error ? error.message : 'The reading session could not open.', 'check')
+      } finally {
+        changed()
+      }
+    },
+    async endSession(book) {
+      if (!book.editionId || !session) return null
+      const client = session
+      await client.idle()
+      await client.close(book.editionId)
+      await client.receiveChange(book.editionId)
+      changed()
+      return gateway.sessionStatus!(book)
+    },
+    leaveSession() {
+      // Leaving stops spending: settle what was signed, by beacon, without waiting.
+      const record = edition ? session?.load(edition) : undefined
+      if (record?.state === 'open' && navigator.sendBeacon)
+        void session!.close(edition, url => navigator.sendBeacon(url))
+    },
+    async checkSessionSigning() {
+      // Free check: five channel-protocol signatures, no payment or server call.
+      if (!wallet || !me?.serverIdentity) throw new ReaderError('Open an owned page first, then run the check.', 'check')
+      const { CHANNEL_PROTOCOL } = await import('../payments/payment-channel.js')
+      const times: number[] = []
+      for (let i = 0; i < 5; i++) {
+        const started = performance.now()
+        await wallet.sessionWallet.createSignature({
+          data: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+          protocolID: CHANNEL_PROTOCOL, keyID: 'signing-check', counterparty: me.serverIdentity,
+        })
+        times.push(Math.round(performance.now() - started))
+      }
+      return times
     },
     async preparationStatus(book, page) {
       allowSpend = false
@@ -460,6 +626,15 @@ export function createReaderGateway(
       checkedStatus = undefined
       lastHttp = undefined
       lastWalletFailure = undefined
+      const sessionRecord = !recoveryOnly && wallet ? session?.load(edition) : undefined
+      if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId) &&
+        !me?.purchases.some(p => p.page === page) && !wallet!.getAttempt(edition, page)) {
+        try { return await sessionPage(book, page) }
+        catch (error) {
+          throw error instanceof ReaderError ? error
+            : new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
+        } finally { changed() }
+      }
       try {
         await acquire()
         if (readingFeeConsent?.identityKey === null)
@@ -682,5 +857,8 @@ export function createReaderGateway(
     reconcileCosts: () => exclusive(() => gateway.reconcileCosts()),
     preparationStatus: (book, page) => exclusive(() => gateway.preparationStatus!(book, page)),
     page: (...args) => exclusive(() => gateway.page(...args)),
+    openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
+    endSession: book => exclusive(() => gateway.endSession!(book)),
+    checkSessionSigning: () => exclusive(() => gateway.checkSessionSigning!()),
   }
 }

@@ -1,5 +1,5 @@
 import { config } from './config.js'
-export function manifest(identityKey: string) {
+export function manifest(identityKey: string, options: { channels?: boolean } = {}) {
   return {
     name: 'Pagestream tier-1 spike', short_name: 'Pagestream', start_url: '/', display: 'standalone',
     icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
@@ -10,6 +10,8 @@ export function manifest(identityKey: string) {
         { protocolID: [2, 'auth message signature'], counterparty: identityKey, description: 'Authenticate reading and bookmark requests to Pagestream' },
         { protocolID: [2, 'server hmac'], counterparty: 'self', description: 'Create authentication and payment nonces' },
         { protocolID: [2, '3241645161d8'], counterparty: identityKey, description: 'Derive BRC-29 page payment outputs' },
+        // Listed only where reading sessions are enabled: each grouped grant adds a token output.
+        ...(options.channels ? [{ protocolID: [2, 'pagestream channel'], counterparty: identityKey, description: 'Sign each page of an approved reading session' }] : []),
       ],
     } },
   }
