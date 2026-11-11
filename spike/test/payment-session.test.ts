@@ -85,6 +85,21 @@ test('a reading session pays each page with one signature, delivers the next on 
   await assert.rejects(h.session.pay(h.edition.id, 7), /No open reading session/)
 })
 
+test('the page requested at approval arrives with the session, so it shows as soon as the wallet approves', async t => {
+  const h = await harness(t)
+  const record = await h.session.open(h.edition.id, 100, 3)
+  const first = h.session.takeCredit(h.edition.id, 3)
+  assert.deepEqual(first?.paragraphs, h.edition.pages[2])
+  assert.equal(h.store.purchases(h.reader.identity, h.edition.id).length, 0, 'credit is not ownership')
+  await h.session.pay(h.edition.id, 3)
+  assert.equal(h.session.takeCredit(h.edition.id, 4)?.page, 4)
+  assert.equal(h.channels.row(record.channelId)!.forfeits, 0, 'paying the credited first page forfeits nothing')
+  // A free or already-owned page is never credited.
+  const other = await harness(t)
+  await other.session.open(other.edition.id, 100, 2)
+  assert.equal(other.session.takeCredit(other.edition.id, 2), undefined)
+})
+
 test('lost responses are resent as the same state and never charge twice', async t => {
   const h = await harness(t)
   await h.session.open(h.edition.id, 100)

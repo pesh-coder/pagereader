@@ -446,7 +446,10 @@ export function createProbe(options: {
     });
     app.post(paths("channels/:channelId/activate"), async (req, res) => {
       try {
-        res.json(await channels.activate(identity(req), String(req.params.channelId)));
+        const result = await channels.activate(identity(req), String(req.params.channelId), req.body?.page);
+        const book = editionFor(req);
+        res.json({ state: result.state, paid: result.paid,
+          ...(result.credit ? { credit: { editionId: book.id, page: result.credit, paragraphs: book.pages[result.credit - 1] } } : {}) });
       } catch (error) {
         channelFailure(res, error);
       }

@@ -10,8 +10,6 @@ import http from 'node:http'
 import https from 'node:https'
 import * as installed from '@bsv/sdk'
 import { completePaymentProof, compactPaymentProof } from '../../app/client/src/payments/payment-ancestors.js'
-import { withReadAhead } from '../../app/client/src/reader/read-ahead.js'
-import type { ReaderGateway, Book, ReaderPage, Purchase } from '../../app/client/src/reader/gateway.js'
 
 const directory = new URL('../evidence/runs/latency-algorithms/', import.meta.url)
 await mkdir(directory, { recursive: true })
@@ -142,62 +140,12 @@ missingSubject.makeTxidOnly(adversary.txid)
 assert.throws(()=>frontier(installed,missingSubject.toBinaryAtomic(adversary.txid),adversary.ancestors),/Missing/)
 assert.throws(()=>completePaymentProof(missingSubject.toBinaryAtomic(adversary.txid),adversary.ancestors),/Missing/)
 
-// Exercise the actual deployed one-slot controller with a virtual clock, not a
-// second scheduling implementation. Native durations are replayed, not remeasured.
-// Optional raw capture; defaults reproduce the retained observation without
-// requiring another developer to possess the owner's private export.
-const capturePath=process.argv.find(arg=>arg.startsWith('--capture='))?.slice('--capture='.length)
-const native=capturePath ? JSON.parse(await readFile(capturePath,'utf8')) : {
-  preparations:[{totalMs:7459}],samples:[{totalMs:17}],
-}
-const preparationMs=native.preparations[0].totalMs as number
-const markerMs=native.samples[0].totalMs as number
-const book: Book={id:'offline',gid:1,title:'Synthetic',author:'Fixture',mode:'reader',editionId:'fixture',pages:100,sourceUrl:'https://www.gutenberg.org'}
-async function replay(dwellMs: number) {
-  let now=0, calls=0, pending: {end:number;finish:()=>void}|undefined
-  const owned: Purchase[]=[{page:3,txid:'initial',sats:5,feeSats:23}]
-  const body=(page:number):ReaderPage=>({editionId:'fixture',page,paragraphs:['Synthetic'],purchase:owned.find(p=>p.page===page)})
-  const source:ReaderGateway={ identity:()=> 'fixture',hasIdentity:()=>true, historyState:()=> 'ready',owned:()=>owned,
-    receipts:()=>[],needsPaymentCheck:()=>false,savedPage:()=>3,walletVersion:()=> 'fixture',network:()=> 'mainnet',
-    library:async()=>({books:[book],purchasesPaused:false}),connect:async()=>{},resumePage:async()=>3,
-    reconcileCosts:async()=>({matched:0,missing:0}),approveReadingFees:()=>{},disconnect:()=>{},bookmark:async()=>{},
-    preparationStatus:async()=> 'clear',page:async(_book,page)=>{
-      if(!owned.some(p=>p.page===page)) {
-        calls++
-        await new Promise<void>(finish=>{assert.equal(pending,undefined);pending={end:now+preparationMs,finish}})
-        owned.push({page,txid:`synthetic-${page}`,sats:5,feeSats:23})
-      }
-      return body(page)
-    }}
-  const gateway=withReadAhead(source,()=>{},()=>now,()=>true,false)
-  gateway.enableReadAhead(book)
-  const waits:number[]=[],ready:boolean[]=[]
-  let displayed=body(3)
-  const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve()}
-  for(let turn=0;turn<24;turn++) {
-    // Actual App waits 1 second after display before starting preparation.
-    let preparation:Promise<ReaderPage|undefined>|undefined
-    if(dwellMs>=1000) {
-      now+=1000;preparation=gateway.prepareNext(book,displayed);await flush()
-      now+=dwellMs-1000
-      if(pending&&pending.end<=now){const p=pending;pending=undefined;p.finish();await flush()}
-    } else now+=dwellMs
-    const clicked=now, turnResult=gateway.page(book,displayed.page+1)
-    await flush()
-    if(pending){now=Math.max(now,pending.end);const p=pending;pending=undefined;p.finish();await flush()}
-    displayed=await turnResult;await preparation
-    waits.push(now-clicked+markerMs);ready.push(gateway.lastReadAheadUse()?.readyAtClick===true)
-  }
-  assert.equal(calls,24);assert.equal(new Set(owned.map(p=>p.txid)).size,25)
-  return {dwellMs,turns:24,payments:calls,readyTurns:ready.filter(Boolean).length,
-    ...summarize(waits),limitation:'Virtual replay of one native duration plus observed 17-ms display marker, not a new native cohort.'}
-}
-const replayRows=[]
-for(const dwell of [0,2000,5000,8000,10000,30000])replayRows.push(await replay(dwell))
+// The one-page preparation replay was removed with that feature on 11 Nov;
+// its results remain in evidence/latency-algorithm-research-2026-11-10.md.
 assert.equal(blockedNetworkCalls,0)
 const report={generatedAt:new Date().toISOString(),node:process.version,platform:process.platform,
   installedSdk:'2.8.11',isolatedSdk:'4.0.1',blockedNetworkCalls,
   scope:'Generated structural BEEF fixtures; no mined validity claim, native wallet, keys, broadcast, provider call or sats. Heap deltas are allocation observations, not peak-memory bounds.',
-  proofRows,replayRows,checks:{exactSubjectAndFees:true,completeProofs:true,missingAncestorsRejected:true,missingSubjectRejected:true,uniqueReplayPayments:true}}
+  proofRows,checks:{exactSubjectAndFees:true,completeProofs:true,missingAncestorsRejected:true,missingSubjectRejected:true}}
 await writeFile(new URL('benchmark.json',directory),JSON.stringify(report,null,2)+'\n')
-console.log(JSON.stringify({replayRows,checks:report.checks},null,2))
+console.log(JSON.stringify({proofRows,checks:report.checks},null,2))

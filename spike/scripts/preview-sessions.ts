@@ -21,7 +21,7 @@ const serverWallet = new Proxy(serverProto, { get(target, name) {
 } }) as unknown as WalletInterface
 const app = createProbe({ store, edition: loadEdition(), catalogue: loadCatalogue(), wallet: serverWallet, serverIdentity,
   research: false, purchasesPaused: () => false, rateLimits: false,
-  channels: { broadcast: async () => {}, enabled: () => true, maxCapacity: 100 } })
+  channels: { broadcast: async () => {}, enabled: () => true, maxCapacity: 5000 } })
 const result = await build({
   absWorkingDir: resolve('app/client'),
   stdin: { resolveDir: resolve('app/client'), loader: 'tsx', contents: `
@@ -60,7 +60,7 @@ const result = await build({
   ` },
   bundle: true, write: false, outdir: 'preview-sessions', format: 'esm', jsx: 'automatic',
   define: {
-    'import.meta.env': JSON.stringify({ BASE_URL: '/', VITE_PAGESTREAM_SESSIONS: '1' }), 'process.env.NODE_ENV': '"development"',
+    'import.meta.env': JSON.stringify({ BASE_URL: '/' }), 'process.env.NODE_ENV': '"development"',
   },
 })
 const js = result.outputFiles.find(f => f.path.endsWith('.js'))!.text

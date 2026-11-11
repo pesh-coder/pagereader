@@ -83,10 +83,9 @@ export interface ReaderGateway {
   sessionStatus?(book: Book): SessionStatus | null
   sessionsEnabled?(): boolean
   sessionMaxSats?(): number | null
-  openSession?(book: Book, capacity: number): Promise<void>
+  openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(book: Book): Promise<SessionStatus | null>
   leaveSession?(): void
-  checkSessionSigning?(): Promise<number[]>
 }
 export interface SessionStatus {
   state: SessionRecord['state']
@@ -527,7 +526,7 @@ export function createReaderGateway(
         ...(sessionError && record.state === 'open' ? { error: sessionError } : {}),
       }
     },
-    async openSession(book, capacity) {
+    async openSession(book, capacity, firstPage) {
       allowSpend = false
       if (book.mode !== 'reader' || !book.editionId) throw new Error('This title has no paid pages.')
       if (edition !== book.editionId) {
@@ -539,7 +538,7 @@ export function createReaderGateway(
       await acquire()
       const client = await sessionClient()
       try {
-        const record = await client.open(edition, capacity)
+        const record = await client.open(edition, capacity, firstPage)
         openedHere.add(record.channelId)
         sessionError = undefined
       } catch (error) {
@@ -563,21 +562,6 @@ export function createReaderGateway(
       const record = edition ? session?.load(edition) : undefined
       if (record?.state === 'open' && navigator.sendBeacon)
         void session!.close(edition, url => navigator.sendBeacon(url))
-    },
-    async checkSessionSigning() {
-      // Free check: five channel-protocol signatures, no payment or server call.
-      if (!wallet || !me?.serverIdentity) throw new ReaderError('Open an owned page first, then run the check.', 'check')
-      const { CHANNEL_PROTOCOL } = await import('../payments/payment-channel.js')
-      const times: number[] = []
-      for (let i = 0; i < 5; i++) {
-        const started = performance.now()
-        await wallet.sessionWallet.createSignature({
-          data: Array.from(crypto.getRandomValues(new Uint8Array(32))),
-          protocolID: CHANNEL_PROTOCOL, keyID: 'signing-check', counterparty: me.serverIdentity,
-        })
-        times.push(Math.round(performance.now() - started))
-      }
-      return times
     },
     async preparationStatus(book, page) {
       allowSpend = false
@@ -859,6 +843,5 @@ export function createReaderGateway(
     page: (...args) => exclusive(() => gateway.page(...args)),
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
     endSession: book => exclusive(() => gateway.endSession!(book)),
-    checkSessionSigning: () => exclusive(() => gateway.checkSessionSigning!()),
   }
 }

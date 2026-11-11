@@ -79,7 +79,7 @@ export function createSessionClient(deps: SessionDeps) {
     isOpen(edition: string) { return load(edition)?.state === 'open' },
 
     /** One wallet approval: lock `capacity` sats; refund is held before anything is sent. */
-    async open(edition: string, capacity: number = config.channel.capacitySats) {
+    async open(edition: string, capacity: number = config.channel.capacitySats, firstPage?: number) {
       const existing = load(edition)
       // An interrupted open never reached the server's refund step: cancel it.
       if (existing?.state === 'funding') await abandon(existing)
@@ -153,9 +153,12 @@ export function createSessionClient(deps: SessionDeps) {
       const status = sent.sendWithResults?.find(result => result.txid === record.terms!.fundingTxid)?.status
       if (status !== 'unproven' && status !== 'sending')
         throw new SessionError(`Wallet broadcast status: ${status ?? 'unknown'}. The session stays closed; your refund is held.`, false)
-      await deps.authJson(api(edition, `channels/${offer.channelId}/activate`), 'POST')
+      const activated = await deps.authJson<{ credit?: SessionPage['credit'] }>(
+        api(edition, `channels/${offer.channelId}/activate`), 'POST', firstPage === undefined ? {} : { page: firstPage })
       record = { ...record, state: 'open', reference: undefined }
       save(record)
+      credit = activated.credit?.editionId === edition && activated.credit.page === firstPage &&
+        Array.isArray(activated.credit.paragraphs) ? activated.credit : undefined
       return record
     },
 

@@ -88,7 +88,25 @@ Implemented as "reading sessions" alongside the unchanged per-page payment, whic
 
 Verification: 161 tests pass (7 channel core, 7 receiver/session end-to-end, 1 gateway, plus all existing), both builds and lint pass. An offline browser preview ([`preview-sessions.ts`](../scripts/preview-sessions.ts)) runs the real reader, gateway and receiver with a synthetic wallet delayed to the native timings (createAction 600 ms, createSignature 49 ms, 390-ms round trip). It measured opening + first page at 2.2 s once, then Next in **8–23 ms** after 0.5–1.5 s of reading and 175 ms after 0.3 s. Ending the session returned 45 of 100 sats (5 pages, 30-sat settlement fee) to the synthetic wallet. These are offline measurements, not native observations.
 
-## Remaining native steps
+## Native pilot, 11 Nov (BSV Browser 1.6.3, owner phone, mainnet)
 
-1. **Free signing check:** open an owned page with `?sessioncheck=1`, then Text settings → *Check session signing (free)*. It signs five test states; report the timings shown and how many wallet prompts appeared.
-2. **Capped paid pilot:** set the backend switches for one identity and a small `PAGESTREAM_CHANNEL_MAX_SATS`, open one session, read a few pages, end it. Spends sats; needs explicit approval of the cap.
+Owner-approved, capped at 100 sats per session, enabled for one identity only.
+
+| Observation | Result |
+|---|---|
+| Free signing check (5 channel signatures) | 39, 35, 34, 33, 33 ms |
+| First page after approval (page 37) | 621 ms (46-ms signature + one 529-ms request) |
+| Next, pages 38–44 | **19–31 ms** each, shown from session credit |
+| Wallet actions during pages | none beyond one `createSignature` per page; one funding approval |
+| Receipts | 8 pages × 5 sats + 72 sats session fees (42 opening + 30 settling), recorded once on page 37; book total 952 → 1,064 sats |
+
+The capture's "0 paid during Next" was a classifier gap: it only recognised on-chain page payments. Session payments are now classified (`payment: 'session'`) and qualify in the timing report with their accepted receipt.
+
+## Changes after the pilot, 11 Nov (owner direction)
+
+- **Sessions are the payment flow.** The purchase panel offers only "Approve up to 5,000 sats and open page N", matching the POC's "approve once … about 5,000 sats this session". Earlier per-page attempts can still be checked and recovered; the per-page fee consent UI is gone.
+- **First page also instant.** Activation delivers the requested page on credit, so it appears as soon as the wallet approves (the pilot's 621-ms first turn becomes a credited display); its signature follows in the background.
+- **Removed test-only features:** "Pay for one next page ahead" (module, tests, preview, build flags), the signing-check button, and the always-visible capture bar. The timing capture stays in the wallet menu for the final timed demo and records only while running.
+- **Backend:** `PAGESTREAM_CHANNEL_IDENTITIES=all`, `PAGESTREAM_CHANNEL_MAX_SATS=5000`.
+
+Verification: 145 tests pass (fewer than before only because read-ahead tests were removed), server/client builds and lint pass. The page-turn latency target still needs the final timed run on both Desktop and phone.

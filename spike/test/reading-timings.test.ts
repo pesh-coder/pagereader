@@ -13,59 +13,34 @@ function fixture() {
   return { capture, context, storage, data, advance: (ms: number) => { now += ms } }
 }
 
-test('prepared turns retain full preparation time and cannot count as a payment within the click boundary', () => {
-  const f = fixture(), token = f.capture.begin(4, 'fixture', false)
-  f.capture.prepared(token, { page: 4, readyAtClick: true, preparationMs: 6406 })
-  f.advance(16)
-  const txid = 'a'.repeat(64)
-  f.capture.finish(token, txid, f.context, [{ txid, identityKey: f.context.identityKey,
-    edition: 'fixture', page: 4, sats: 5, feeSats: 23, state: 'confirmed' }], true)
+test('a reading-session page counts as paid within the click, once, and qualifies with its receipt', () => {
+  const f = fixture(), txid = 'channel:' + 'c'.repeat(32) + ':1'
+  const token = f.capture.begin(4, 'fixture', false)
+  f.capture.wallet({ method: 'createSignature', ms: 40, ok: true })
+  f.advance(25)
+  // Shown on session credit: the receipt is still confirming at the visible frame.
+  const pending = [{ txid, identityKey: f.context.identityKey, edition: 'fixture', page: 4, sats: 5, feeSats: 0, state: 'pending' as const }]
+  f.capture.finish(token, txid, f.context, pending, true)
+  assert.equal(f.capture.paidCount(), 1)
+  assert.equal(f.capture.run!.samples[0].payment, 'session')
+  const again = f.capture.begin(4, 'fixture', false)
+  f.capture.finish(again, txid, f.context, pending, true)
+  assert.equal(f.capture.paidCount(), 1, 'one session payment cannot count twice')
+  f.capture.stop()
   const run = JSON.parse(f.capture.export())
-  assert.deepEqual(run.samples[0].readAhead, { page: 4, readyAtClick: true, preparationMs: 6406 })
-  assert.equal(run.samples[0].totalMs, 16)
-  assert.equal(run.samples[0].purchased, false)
-  assert.equal(timingReport(run).eligiblePaidSamples, 0)
-  assert.equal(timingReport(run).C3, 'UNRESOLVED')
+  run.ledger[0].state = 'confirmed'
+  run.identityKey = f.context.identityKey = '02' + 'a'.repeat(64)
+  const report = timingReport(run)
+  assert.equal(report.paidSamples, 1)
+  assert.equal(report.eligiblePaidSamples, 1)
+  assert.equal(report.p95Ms, 25)
 })
 
-test('background preparation keeps wallet/HTTP stages separate even when Next joins in flight', () => {
-  const f = fixture()
-  const preparation = f.capture.beginPreparation(4, 'fixture')
-  f.advance(6000)
-  const click = f.capture.begin(4, 'fixture', false)
-  f.advance(406)
-  f.capture.wallet({ method: 'page payment workflow', ms: 6406, ok: true })
-  f.capture.http({ path: '/paid-fixture', status: 200, ms: 6000 })
-  const txid = 'b'.repeat(64), ledger = [{ txid, identityKey: f.context.identityKey, edition: 'fixture', page: 4, sats: 5, feeSats: 23, state: 'confirmed' as const }]
-  f.capture.finishPreparation(preparation, txid, ledger)
-  f.capture.prepared(click, { page: 4, readyAtClick: false, preparationMs: 6406 })
-  f.capture.finish(click, txid, f.context, ledger, true)
-  const run = JSON.parse(f.capture.export())
-  assert.equal(run.preparations[0].totalMs, 6406)
-  assert.equal(run.preparations[0].walletCalls.length, 1)
-  assert.equal(run.preparations[0].http.length, 1)
-  assert.equal(run.preparations[0].accepted, true)
-  assert.equal(run.samples[0].walletCalls.length, 0)
-  assert.equal(run.samples[0].purchased, false)
-  assert.equal(f.capture.prepaidCount(), 1)
-  assert.equal(f.capture.preparedTurnCount(), 1)
-  assert.equal(timingReport(run).readAhead.paymentsAhead, 1)
-  assert.equal(timingReport(run).readAhead.readyClickP95Ms, null, 'a rapid Next is not a ready-page hit')
-})
-
-test('a payment prepared before any Next is counted and retained with its receipt', () => {
-  const f = fixture(), token = f.capture.beginPreparation(4, 'fixture')
-  f.advance(7459)
-  f.capture.wallet({ method: 'page payment workflow', ms: 1583, ok: true })
-  const txid = 'c'.repeat(64)
-  f.capture.finishPreparation(token, txid, [{ txid, identityKey: f.context.identityKey, edition: 'fixture', page: 4, sats: 5, feeSats: 23, state: 'confirmed' }])
+test('a session page without its own receipt is not counted as paid', () => {
+  const f = fixture(), token = f.capture.begin(5, 'fixture', false)
+  f.advance(20)
+  f.capture.finish(token, 'channel:' + 'd'.repeat(32) + ':2', f.context, [], true)
   assert.equal(f.capture.paidCount(), 0)
-  assert.equal(f.capture.prepaidCount(), 1)
-  assert.equal(f.capture.run?.samples.length, 0)
-  assert.equal(f.capture.run?.ledger[0].txid, txid)
-  assert.equal(timingReport(JSON.parse(f.capture.export())).readAhead.paymentsAhead, 1)
-  f.capture.run!.preparations!.push(f.capture.run!.preparations![0])
-  assert.equal(f.capture.prepaidCount(), 1, 'repeated records cannot inflate payment counts')
 })
 
 test('capture exports report-compatible new payments; owned reads and recovery cannot inflate p95 cohort', () => {

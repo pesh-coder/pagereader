@@ -49,13 +49,16 @@ export function timingReport(run: Run) {
   for (const [index, sample] of paid.entries()) {
     const payment = run.ledger?.filter(entry => entry.txid === sample.txid) ?? []
     const workflows = sample.walletCalls?.filter(call => call.method === 'page payment workflow') ?? []
+    // Either one new on-chain page payment inside the click, or one reading-session
+    // payment (a channel state) whose receipt the receiver accepted.
+    const session = /^channel:[a-f0-9]{32}:\d+$/.test(sample.txid ?? '')
     const valid = sample.visible === true && Number.isFinite(sample.totalMs) && sample.totalMs! >= 0 &&
       sample.network === 'mainnet' && sample.trigger === 'explicit' && sample.timingBoundary === 'request-to-visible-frame' &&
       Number.isInteger(sample.page) && sample.page! > config.freePages && sample.edition === run.edition && sample.identityKey === run.identityKey &&
-      /^[a-f0-9]{64}$/.test(sample.txid ?? '') && !pages.has(sample.page!) && !txids.has(sample.txid!) &&
-      workflows.length === 1 && workflows[0].ok === true &&
+      !pages.has(sample.page!) && !txids.has(sample.txid!) &&
+      (session || (/^[a-f0-9]{64}$/.test(sample.txid ?? '') && workflows.length === 1 && workflows[0].ok === true)) &&
       payment.length === 1 && payment[0].identityKey === run.identityKey && payment[0].edition === run.edition && payment[0].page === sample.page && payment[0].sats === config.priceSats && payment[0].state === 'confirmed'
-    if (!valid) reasons.push(`Paid sample ${index + 1} lacks a unique new transaction, matching accepted receipt, explicit visible timing or mainnet context.`)
+    if (!valid) reasons.push(`Paid sample ${index + 1} lacks a unique new payment, matching accepted receipt, explicit visible timing or mainnet context.`)
     else eligiblePaidSamples++
     if (sample.page !== undefined) pages.add(sample.page)
     if (sample.txid) txids.add(sample.txid)

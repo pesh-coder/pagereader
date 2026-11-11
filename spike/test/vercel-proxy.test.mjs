@@ -11,13 +11,13 @@ import { Store } from '../src/store.ts'
 import { createProbe } from '../src/probe.ts'
 import { loadEdition } from '../src/content.ts'
 
-test('reader deployment exposes opt-in continuous one-page preparation and keeps overlap disabled', async () => {
+test('reader deployment builds the plain session reader with no pilot or overlap switches', async () => {
   const previous = process.env.PAGESTREAM_BACKEND_ORIGIN
   process.env.PAGESTREAM_BACKEND_ORIGIN = 'https://api.example.com'
   try {
     const { config } = await import('../../vercel.mjs')
-    assert.equal(config.buildCommand, 'VITE_PAGESTREAM_READ_AHEAD=1 VITE_PAGESTREAM_READ_AHEAD_MODE=continuous VITE_PAGESTREAM_SESSIONS=1 npm --prefix app/client run build && node deploy/stage-frontend.mjs')
-    assert.ok(!config.buildCommand.includes('READ_AHEAD_TARGET'))
+    assert.equal(config.buildCommand, 'npm --prefix app/client run build && node deploy/stage-frontend.mjs')
+    assert.ok(!config.buildCommand.includes('READ_AHEAD'))
     assert.ok(!config.buildCommand.includes('PAYMENT_OVERLAP'))
     assert.equal(vercelConfig(process.env).buildCommand, 'npm --prefix app/client run build && node deploy/stage-frontend.mjs')
     assert.ok(config.rewrites.some(route => route.source === '/api/:path*' && route.destination === 'https://api.example.com/api/:path*'))

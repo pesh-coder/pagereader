@@ -17,27 +17,15 @@ import { WalletMenu } from './reader/components/WalletMenu'
 import { BookText } from './reader/components/BookText'
 import { Library } from './reader/components/Library'
 import { SpendingPanel } from './reader/components/SpendingPanel'
-import { withReadAhead } from './reader/read-ahead'
-import { readAheadPermitted } from './reader/read-ahead-policy'
 
-// Reviewable opt-in experiment. Ordinary production builds keep it unavailable.
-const readAheadAvailable = import.meta.env.VITE_PAGESTREAM_READ_AHEAD === '1'
-const readAheadTarget = import.meta.env.VITE_PAGESTREAM_READ_AHEAD_TARGET ?? ''
-const readAheadMode = import.meta.env.VITE_PAGESTREAM_READ_AHEAD_MODE ?? 'scoped'
-// Reading sessions (payment channel): build-time switch; the server separately
-// limits which wallets may open one.
-const sessionsAvailable = import.meta.env.VITE_PAGESTREAM_SESSIONS === '1'
-const permitReadAhead = (identity: string, edition: string, page: number) =>
-  readAheadPermitted(readAheadAvailable, readAheadMode, readAheadTarget, identity, edition, page)
 
 export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderGateway } = {}) {
   const [, invalidate] = useState(0)
   const [timings] = useState(() => new ReadingTimings(localStorage))
   const [gateway] = useState(() =>
-    withReadAhead(gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
+    gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
       wallet: call => timings.wallet(call), http: call => timings.http(call),
-    }), () => invalidate((n) => n + 1), () => performance.now(),
-    permitReadAhead, readAheadMode !== 'continuous'),
+    }),
   )
   const [books, setBooks] = useState<Book[]>([])
   const [book, setBook] = useState<Book | null>(null)
@@ -53,9 +41,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [errorAction, setErrorAction] = useState<
     'connect' | 'retry' | 'check' | null
   >(null)
-  // Do not reuse the old sessionStorage flag: it only explained a 1-sat fee cap.
-  // The higher reader ceiling requires fresh consent after reload or logout.
-  const [explained, setExplained] = useState(false)
   const [failedPage, setFailedPage] = useState<number | null>(null)
   const [paused, setPaused] = useState(true)
   const [checkingCosts, setCheckingCosts] = useState(false)
@@ -73,35 +58,11 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const lock = useRef(false)
   const viewRevision = useRef(0)
   const article = useRef<HTMLElement>(null)
-  const readAhead = gateway.readAheadStatus()
   useEffect(() => {
-    if (!readAheadAvailable || !readAhead.enabled || !book || !page || busy || paused ||
-      document.visibilityState !== 'visible' || readAhead.state !== 'idle' ||
-      !permitReadAhead(gateway.identity() ?? '', book.editionId ?? '', page.page + 1)) return
-    const timer = window.setTimeout(() => {
-      const revision = viewRevision.current
-      const preparationToken = timings.beginPreparation(page.page + 1, book.editionId ?? '')
-      void gateway.prepareNext(book, page).then(prepared => {
-        timings.finishPreparation(preparationToken, prepared?.purchase?.txid, gateway.receipts())
-      }).catch(failure => {
-        timings.finishPreparation(preparationToken, undefined, gateway.receipts())
-        if (revision !== viewRevision.current) return
-        setError(failure instanceof Error ? failure.message : 'Next-page preparation stopped.')
-        setErrorAction(failure instanceof ReaderError ? failure.action : 'check')
-        setPaymentDetails(failure instanceof ReaderError ? failure.details ?? [] : [])
-        setFailedPage(page.page + 1)
-      })
-    }, 1000)
-    return () => window.clearTimeout(timer)
-  }, [book, page, busy, paused, gateway, readAhead.enabled, readAhead.state, timings])
-  useEffect(() => {
-    const stop = () => {
-      if (document.visibilityState !== 'visible') gateway.stopReadAhead()
-    }
-    const leave = () => { gateway.stopReadAhead(); gateway.leaveSession?.() }
-    document.addEventListener('visibilitychange', stop)
+    // Leaving stops spending: the open reading session settles at once.
+    const leave = () => gateway.leaveSession?.()
     window.addEventListener('pagehide', leave)
-    return () => { document.removeEventListener('visibilitychange', stop); window.removeEventListener('pagehide', leave) }
+    return () => window.removeEventListener('pagehide', leave)
   }, [gateway])
   useEffect(() => {
     let cancelled = false
@@ -175,7 +136,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     const timingToken = timings.begin(number, selected.editionId ?? '', recoveryOnly)
     try {
       const body = await gateway.page(selected, number, recoveryOnly, approval)
-      timings.prepared(timingToken, gateway.lastReadAheadUse())
       setError('')
       setPaymentDetails([])
       setErrorAction(null)
@@ -211,7 +171,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   function openBook(selected: Book) {
     if (busy) return
     viewRevision.current++
-    gateway.stopReadAhead(true)
     setCostMessage('')
     if (selected.mode === 'excerpt') {
       setBook(selected)
@@ -272,8 +231,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     if (!book || busy || n < 1 || n > (book.pages ?? 0)) return
     if (page && n !== page.page + 1) {
       viewRevision.current++
-      gateway.stopReadAhead(true)
-    }
+      }
     if (n <= config.freePages || owns(n)) {
       void turn(book, n)
       return
@@ -284,10 +242,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     }
     if (sessionOpen) {
       void turn(book, n)
-      return
-    }
-    if (explained) {
-      void turn(book, n, paused)
       return
     }
     setTarget(n)
@@ -346,7 +300,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     setErrorAction(null)
     setSessionMessage('')
     try {
-      await gateway.openSession(book, sessionSats)
+      await gateway.openSession(book, sessionSats, target)
       setPanel(null)
     } catch (failure) {
       setPanel(null)
@@ -375,32 +329,14 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       setBusy(false)
     }
   }
-  async function checkSigning() {
-    if (busy || lock.current || !gateway.checkSessionSigning) return
-    lock.current = true
-    setBusy(true)
-    setSessionMessage('Signing five test pages. Approve any wallet prompt, and note whether more appear.')
-    try {
-      const times = await gateway.checkSessionSigning()
-      setSessionMessage(`Signed 5 test pages: ${times.join(', ')} ms. Nothing was paid. Report how many wallet prompts you saw.`)
-    } catch (failure) {
-      setSessionMessage(failure instanceof Error ? failure.message : 'The signing check stopped. Nothing was paid.')
-    } finally {
-      lock.current = false
-      setBusy(false)
-    }
-  }
-  function continuePurchase() {
+  function checkPurchase() {
+    // Paused purchases: check an existing page without creating a payment.
     if (!book || busy || lock.current) return
-    if (!paused) {
-      gateway.approveReadingFees()
-      setExplained(true)
-    }
-    void turn(book, target, paused)
+    void turn(book, target, true)
   }
-  const session = book && sessionsAvailable ? gateway.sessionStatus?.(book) ?? null : null
+  const session = book ? gateway.sessionStatus?.(book) ?? null : null
   const sessionOpen = session?.state === 'open'
-  // The server sets the session ceiling (smaller during pilots).
+  // The server may set a lower session ceiling.
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
   const spending = summarizeSpending(receipts)
@@ -413,7 +349,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   )
   const nextPaid =
     page && page.page + 1 > config.freePages && !owns(page.page + 1)
-  const maxCost = config.priceSats + config.provisional.readerMaxPageFeeSats
   const close = () => setPanel(null)
   return (
     <div
@@ -430,8 +365,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             disabled={busy}
             onClick={() => {
               viewRevision.current++
-              gateway.stopReadAhead(true)
-              setBook(null)
+                        setBook(null)
               setPage(null)
               close()
               setError('')
@@ -461,7 +395,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                 viewRevision.current++
                 timings.stop('Wallet disconnected during capture.')
                 gateway.disconnect()
-                setExplained(false)
                 setPage((current) =>
                   current && current.page > config.freePages ? null : current,
                 )
@@ -472,7 +405,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             />
           </div>
         </div>
-        {timings.run && <div className="reading-tools"><button className="quiet" onClick={() => setPanel('timings')} aria-live="polite">{timings.run.recording ? 'Recording' : 'Capture stopped'} · {timings.paidCount()} paid during Next · {timings.prepaidCount()} paid ahead</button></div>}
+        {timings.run?.recording && <div className="reading-tools"><button className="quiet" onClick={() => setPanel('timings')} aria-live="polite">Recording timings · {timings.paidCount()} paid page turns</button></div>}
         {book && (
           <div className="reading-tools">
             <button
@@ -689,11 +622,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               disabled={!page || page.page === book.pages || busy}
               onClick={() => request(page!.page + 1)}
             >
-              {readAhead.page === (page?.page ?? 0) + 1 && readAhead.state === 'ready'
-                ? 'Next · ready'
-                : readAhead.page === (page?.page ?? 0) + 1 && readAhead.state === 'preparing'
-                  ? 'Next · preparing…'
-                  : nextPaid ? sessionOpen ? `Next · ${config.priceSats} sats` : `Next · ${config.priceSats} sats + fee` : 'Next'} ›
+              {nextPaid ? `Next · ${config.priceSats} sats` : 'Next'} ›
             </button>
           </nav>
         </>
@@ -706,33 +635,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       )}
       {panel === 'appearance' && (
         <Panel title="Text settings" close={close}>
-          {readAheadAvailable && book && page?.purchase && (
-            <section aria-label="Faster page turns">
-              <label>
-                <input type="checkbox" checked={readAhead.enabled} disabled={busy || paused}
-                  onChange={event => {
-                    if (event.target.checked) {
-                      gateway.approveReadingFees()
-                      setExplained(true)
-                      gateway.enableReadAhead(book)
-                    } else gateway.stopReadAhead()
-                  }} /> Pay for one next page ahead
-              </label>
-              <p className="subtle">While you read, buy and load one next page for 5 sats plus its miner fee, at most {maxCost} sats total per page. That page may remain unread if you leave or jump elsewhere. After Next, one following page is prepared. A jump pauses preparation and never buys the skipped pages; already-bought pages remain yours. Hiding the reader stops new preparation; an already-started payment may finish. This choice clears when you leave, jump, change books, reload or log out.</p>
-              <p role="status">{readAhead.state === 'ready' ? `Page ${readAhead.page} ready and paid.` : readAhead.state === 'preparing' ? `Preparing page ${readAhead.page}…` : readAhead.state === 'failed' ? 'Preparation stopped. Check the original payment before trying again.' : readAhead.enabled ? readAheadMode === 'continuous' ? 'The next page will be prepared while you read.' : 'Waiting for the approved test page.' : 'Preparation is off until you choose it.'}</p>
-            </section>
-          )}
-          {sessionsAvailable && gateway.checkSessionSigning &&
-            (gateway.sessionsEnabled?.() || new URLSearchParams(location.search).has('sessioncheck')) && (
-            <section aria-label="Reading session signing check">
-              <button disabled={busy || !page?.purchase} onClick={() => void checkSigning()}>
-                Check session signing (free)
-              </button>
-              <p className="subtle">
-                Signs five test pages with your wallet. Nothing is paid or sent. Open an owned page first.
-              </p>
-            </section>
-          )}
           <div className="setting-row">
             <span>Text size</span>
             <div>
@@ -805,7 +707,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                     ? 'Free'
                     : owns(n)
                       ? 'Owned'
-                      : `${config.priceSats} sats + fee`}
+                      : `${config.priceSats} sats`}
                 </span>
               </button>
             ))}
@@ -833,57 +735,35 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       )}
       {panel === 'purchase' && book && (
         <Panel title={`Open page ${target}`} close={close}>
-          {sessionsAvailable && !paused && gateway.openSession && gateway.sessionsEnabled?.() && (
+          {paused ? (
+            <>
+              <p>
+                New purchases are temporarily paused. You can check pages you
+                already own.
+              </p>
+              <button className="wide" onClick={checkPurchase}>
+                Check page {target}
+              </button>
+            </>
+          ) : (
             <section aria-label="Reading session" className="session-offer">
               <p>
-                <strong>Approve once, then read.</strong> Your wallet sets aside up to {sessionSats} sats
-                for this session. Each page then costs {config.priceSats} sats with no further prompts
-                and no per-page miner fee.
+                <strong>Approve once, then read.</strong> Your wallet asks once to set aside up to{' '}
+                {sessionSats} sats for this reading session. Each page then costs {config.priceSats} sats,
+                with no further prompts and no per-page miner fee.
               </p>
               <p className="subtle">
-                When you end the session or leave, Pagestream settles once and your unspent sats return
-                to your wallet. Two miner fees apply per session: opening and settling (about{' '}
-                {config.channel.settlementFeeSats} sats each). Your wallet holds a refund that unlocks
-                after 24 hours if Pagestream never settles. The next page may load before you pay for it;
-                you pay only when you open it.
+                Stop reading, stop paying: when you end the session or leave, Pagestream settles once
+                and your unspent sats return to your wallet. Opening and settling each carry one miner
+                fee (about {config.channel.settlementFeeSats} sats). If Pagestream never settles, your
+                wallet holds a refund that unlocks after 24 hours. Pages you already own open free.
               </p>
+              <WalletGuidance />
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>
                 Approve up to {sessionSats} sats and open page {target}
               </button>
-              <p className="subtle">Or pay page by page:</p>
             </section>
           )}
-          <p>
-            A new page costs {config.priceSats} sats plus the wallet’s miner fee.
-            If you already own page {target}, it opens without another charge.
-          </p>
-          <p className="subtle">
-            Allow up to {config.provisional.readerMaxPageFeeSats} sats in miner fees
-            per new page: at most {maxCost} sats total. We charge the actual fee,
-            so a lower fee costs less. Higher or unknown fees stop for review.
-          </p>
-          <p className="subtle">
-            This app approval lasts until you reload or log out.{' '}
-            {readAheadAvailable
-              ? 'Next buys only the page you request unless you separately enable one-page preparation in Text settings.'
-              : 'Each Next click buys only the page you request; we never buy ahead.'}
-          </p>
-          <p className="subtle">
-            {config.provisional.readerPermissionCopy} Your wallet controls when
-            approval is needed; its allowance may be monthly.
-          </p>
-          <WalletGuidance />
-          {paused && (
-            <p className="subtle">
-              New purchases are temporarily paused. You can check pages you
-              already own.
-            </p>
-          )}
-          <button className="paid-action wide" onClick={continuePurchase}>
-            {paused
-              ? `Check page ${target}`
-              : `Allow up to ${maxCost} sats per page and open page ${target}`}
-          </button>
         </Panel>
       )}
       {panel === 'spent' && (

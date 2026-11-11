@@ -117,16 +117,22 @@ export function createChannelService(options: {
       return { terms, refundSignature: Utils.toBase64(refund) }
     },
 
-    /** Broadcast the funding (idempotent with the reader's own sendWith) and open the session. */
-    async activate(identity: string, id: string) {
+    /**
+     * Broadcast the funding (idempotent with the reader's own sendWith) and open
+     * the session. The page the reader asked for is delivered on credit, so it
+     * appears as soon as the session opens; its signature follows.
+     */
+    async activate(identity: string, id: string, firstPage?: number) {
       const channel = row(id)
       if (!channel || channel.identity !== identity) throw new ChannelError(404, 'Reading session not found')
-      if (channel.state === 'open') return { state: 'open' as const, paid: channel.paid }
+      if (channel.state === 'open') return { state: 'open' as const, paid: channel.paid, credit: null }
       if (channel.state !== 'funded') throw new ChannelError(409, 'Reading session is not awaiting activation')
-      const terms = termsOf(channel)
+      const terms = termsOf(channel), pages = options.pages(channel.edition) ?? 0
       await options.broadcast(Utils.toArray(channel.funding_beef!, 'base64'), terms.fundingTxid)
-      db.prepare("UPDATE channels SET state='open', last_activity=? WHERE id=? AND state='funded'").run(now(), id)
-      return { state: 'open' as const, paid: 0 }
+      const credit = Number.isSafeInteger(firstPage) && firstPage! > config.freePages && firstPage! <= pages &&
+        !store.owned(identity, channel.edition, firstPage!) && !blockingIntent(identity, channel.edition, firstPage!) ? firstPage! : null
+      db.prepare("UPDATE channels SET state='open', credit_page=?, last_activity=? WHERE id=? AND state='funded'").run(credit, now(), id)
+      return { state: 'open' as const, paid: 0, credit }
     },
 
     /** O(1) per page: rebuild the next state, verify one signature, record ownership. */

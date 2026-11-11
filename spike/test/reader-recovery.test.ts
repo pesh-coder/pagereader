@@ -8,7 +8,6 @@ import {
 import type { openWallet } from "../src/wallet-client.js";
 import { reconcileUnsignedPreparation } from "../../app/client/src/payments/unsigned-preparation.js";
 import type { PaymentAttempt } from "../src/payment-action.js";
-import { withReadAhead } from '../../app/client/src/reader/read-ahead.js';
 
 const book: Book = {
   id: "book",
@@ -23,23 +22,6 @@ const book: Book = {
 const requestId = "11111111-1111-4111-8111-111111111111";
 const purchase = { page: 3, txid: "original-transaction", sats: 5, feeSats: 1 };
 const response = (body: unknown) => new Response(JSON.stringify(body));
-
-test('read-ahead uses the existing guarded fee consent and durable reader receipts', async t => {
-  const f = fixture(t)
-  const gateway = withReadAhead(f.gateway, () => {})
-  await gateway.library()
-  gateway.approveReadingFees()
-  const displayed = await gateway.page(book, 3)
-  gateway.enableReadAhead(book)
-  await gateway.prepareNext(book, displayed)
-  assert.deepEqual(f.feeCaps, [23, 23])
-  assert.deepEqual(f.counts(), { creates: 2, recoveries: 0 })
-  assert.equal(gateway.receipts().filter(x => x.page === 4 && x.state === 'confirmed').length, 1)
-  const ready = await gateway.page(book, 4)
-  assert.equal(ready.purchase?.txid, 'original-transaction-4')
-  assert.deepEqual(f.counts(), { creates: 2, recoveries: 0 })
-  assert.equal(gateway.lastReadAheadUse()?.readyAtClick, true)
-})
 
 function fixture(t: TestContext) {
   const originals = ["localStorage", "location", "fetch"].map(
