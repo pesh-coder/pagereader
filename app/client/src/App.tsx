@@ -134,6 +134,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     try {
       const body = await gateway.page(selected, number, recoveryOnly, approval)
       setError('')
+      // A top-up or withdraw result is about the moment it happened; once the
+      // reader moves on, the balance bar shows the current amount.
+      setSessionMessage('')
       setPaymentDetails([])
       setErrorAction(null)
       setFeeApproval(null)

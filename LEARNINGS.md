@@ -4,7 +4,7 @@ Pagereader is a proof of concept (POC): a reader for Project Gutenberg books whe
 
 This file is written for the next person who picks up the repo. It explains what we built, what worked, what didn't, and why. Read the first two sections for the short version; the rest is the detail behind them.
 
-**Where the POC ended (13 November 2026):** readers approve one **reading balance**, then turn pages with no wallet prompts. On the owner's phone, 23 paid pages in a row appeared in **31 ms at the 95th percentile** (target: 500 ms), with no errors. The approach that got us there is a one-way payment channel, explained in [section 3](#3-paying-for-pages-the-final-design-a-reading-balance).
+**Where the POC ended (14 November 2026):** readers approve one **reading balance**, then turn pages with no wallet prompts. Paid pages appeared in **31 ms at the 95th percentile on the phone** (23 pages, BSV Browser) and **17 ms on BSV Desktop** (21 pages), against a 500 ms target, with no errors. A real top-up also worked. The approach that got us there is a one-way payment channel, explained in [section 3](#3-paying-for-pages-the-final-design-a-reading-balance).
 
 ---
 
@@ -32,6 +32,10 @@ This file is written for the next person who picks up the repo. It explains what
 | Reading balance, phone, 13 Nov (final run, after reload fix) | Tap → page visible, 23 pages (4–26) | **p95 31 ms**, max 32 ms, 0 errors, 0 wallet prompts |
 | Same final run | Wallet signature per page | 41–74 ms |
 | Same final run | Payment confirmed by the server (background) | median 389 ms, p95 584 ms, max 619 ms |
+| Reading balance, BSV Desktop 3.3.1, 13 Nov | Tap → page visible, 21 pages (9–29) | **p95 17 ms**, max 18 ms, 0 errors, 0 wallet prompts |
+| Same Desktop run | Wallet signature per page | 10–43 ms (188 ms for the first) |
+| Same Desktop run | Payment confirmed by the server (background) | median 328 ms, p95 562 ms, max 942 ms (first page) |
+| Top up, 14 Nov | One wallet approval refilled the balance | 2,410 sats available afterwards; reading continued with no prompt |
 
 The 500 ms target is "tap to visible page", and it is met. The background confirmation sits close to one phone-to-server round trip: the server's own work is about 8 ms, and the rest is the network (phone → Vercel → Railway). Moving the server from Railway US West to EU West cut that round trip from 390 to 261 ms. Bypassing Vercel and calling Railway directly saved only 7–10 ms, so we kept the single address.
 
@@ -172,9 +176,7 @@ These cost real time or the owner's money during the POC:
 
 ## 9. Still open
 
-- A first full run on **BSV Desktop** with reading balances.
-- A real **top-up** on a device.
-- **Server confirmation under 500 ms** on every page (p95 is 584 ms on the phone's network). Not part of the target, since the page is visible long before.
+- **Server confirmation under 500 ms** on every page (p95 is 584 ms on the phone and 562 ms on Desktop). Not part of the target, since the page is visible long before.
 - The 90-second demo recording.
 - Python: not attempted.
 

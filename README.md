@@ -2,7 +2,7 @@
 
 A reader for Project Gutenberg classics where you pay a few satoshis per page with a BSV wallet. There is no signup: your wallet's identity key is your account. Eight complete books are included. Pages 1–2 of every book are free and need no wallet; each later page costs **5 sats**.
 
-**Status: finished proof of concept on BSV mainnet** (live at https://pagereader.vercel.app). Readers approve one **reading balance** of up to 2,500 sats, then turn pages with no wallet prompts. Each page is paid by a wallet signature in the background. On BSV Browser (phone), 23 paid pages in a row appeared in **31 ms at the 95th percentile** against a 500 ms target. Not yet done: a full BSV Desktop run with reading balances, a real top-up on a device, and the demo recording.
+**Status: finished proof of concept on BSV mainnet** (live at https://pagereader.vercel.app). Readers approve one **reading balance** of up to 2,500 sats, then turn pages with no wallet prompts. Each page is paid by a wallet signature in the background. Paid pages appeared in **31 ms at the 95th percentile on BSV Browser** (phone, 23 pages) and **17 ms on BSV Desktop** (21 pages), against a 500 ms target. Top up has also been tested with a real wallet. Not yet done: the demo recording.
 
 **Start with [LEARNINGS.md](LEARNINGS.md).** It explains how payments work, what we tried and replaced, and the wallet behaviour to watch out for.
 
