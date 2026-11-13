@@ -32,10 +32,12 @@ async function harness(t: { after: (fn: () => unknown) => void }, enabled = true
   const auth = new AuthFetch(reader.proto as unknown as WalletInterface)
   const posts: { path: string; ms: number }[] = []
   const storage = new Map<string, string>()
-  const session = createSessionClient({
+  // A reader client on its own browser storage; `tamper` can alter request bodies.
+  const client = (store_ = storage, tamper: (path: string, body: unknown) => unknown = (_path, body) => body) => createSessionClient({
     wallet: reader.wallet, identityKey: reader.identity,
     authJson: async (path, method, body) => {
-      const response = await auth.fetch(origin + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) })
+      const sent = body === undefined ? undefined : tamper(path, body)
+      const response = await auth.fetch(origin + path, { method, ...(sent === undefined ? {} : { body: JSON.stringify(sent), headers: { 'Content-Type': 'application/json' } }) })
       const json = await response.json()
       if (!response.ok) throw new Error(json.error)
       return json
@@ -45,9 +47,10 @@ async function harness(t: { after: (fn: () => unknown) => void }, enabled = true
       try { return await fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }
       finally { posts.push({ path, ms: performance.now() - started }) }
     },
-    storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => void storage.set(key, value) },
+    storage: { getItem: key => store_.get(key) ?? null, setItem: (key, value) => void store_.set(key, value) },
   })
-  return { store, edition, app, channels: app.locals.channels as ChannelService, reader, session, received, broadcasts, posts, origin, storage }
+  const session = client()
+  return { store, edition, app, channels: app.locals.channels as ChannelService, reader, session, client, received, broadcasts, posts, origin, storage }
 }
 
 test('a reading session pays each page with one signature, delivers the next on credit, and settles once', async t => {
@@ -264,6 +267,28 @@ test('returning to an open session restarts its 30-minute idle window', async t 
   clock += 25 * 60 * 1000
   assert.deepEqual(await h.channels.settleIdle(), { settled: 0, failures: [] }, '50 minutes after the last page, but 25 after returning')
   assert.equal(h.channels.row(record.channelId)!.state, 'open')
+})
+
+test('a reader whose saved data was cleared still collects its change from the server-kept details', async t => {
+  const h = await harness(t)
+  const serverIdentity = (await h.session.open(h.edition.id, 160)).serverIdentity
+  await h.session.pay(h.edition.id, 3)
+  await h.session.close()
+  // This device lost its saved data before collecting: a fresh client on empty storage.
+  const fresh = h.client(new Map())
+  const owed = h.channels.toCollect(h.reader.identity)
+  assert.equal(owed.length, 1)
+  assert.equal(await fresh.collectSettled(owed, serverIdentity), 1)
+  const change = h.reader.internalized.at(-1) as { outputs: { outputIndex: number }[] }
+  assert.equal(change.outputs[0].outputIndex, 1, 'the reader receives its own change output only')
+  assert.equal(await fresh.collectSettled(owed, serverIdentity), 0, 'never collected twice on the same device')
+})
+
+test('the server refuses change details that do not match the change address', async t => {
+  const h = await harness(t)
+  const tampered = h.client(new Map(), (path, body) =>
+    path.endsWith('/fund') ? { ...(body as object), readerSuffix: 'not-the-real-suffix' } : body)
+  await assert.rejects(tampered.open(h.edition.id, 160), /Change details do not match/)
 })
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {

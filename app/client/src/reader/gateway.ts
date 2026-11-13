@@ -34,6 +34,7 @@ interface Me {
   serverIdentity?: string
   sessionsEnabled?: boolean
   sessionMaxSats?: number
+  sessionsToCollect?: { channelId: string; edition: string }[]
   paymentAncestors?: { txid: string; transaction: string }[]
   identityKey: string
   purchases: Purchase[]
@@ -197,6 +198,12 @@ export function createReaderGateway(
     }
     if (['funded', 'closing', 'settled'].includes(client.load()?.state ?? ''))
       void client.receiveChange().then(changed, () => undefined)
+  }
+  // Change from settled sessions this device has no record of (e.g. cleared data).
+  const collectChange = () => {
+    const client = session, list = me?.sessionsToCollect, serverIdentity = me?.serverIdentity
+    if (client && list?.length && serverIdentity)
+      void client.collectSettled(list, serverIdentity).then(received => { if (received) changed() }, () => undefined)
   }
   const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
     const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
@@ -376,6 +383,7 @@ export function createReaderGateway(
     if (edition) {
       await refreshMe()
       await tidySession()
+      collectChange()
     }
   }
   const paidResponse = async (
@@ -637,8 +645,11 @@ export function createReaderGateway(
           if (error instanceof ReaderError) throw error
           // The server settled the session (idle or ended elsewhere): nothing was
           // charged for this page; offer a new session instead of another method.
-          if (session?.load()?.state !== 'open')
+          if (session?.load()?.state !== 'open') {
+            // Collect the returned sats now rather than on the next visit.
+            void session?.receiveChange().then(changed, () => undefined)
             throw Object.assign(new ReaderError('Your reading session has ended, so this page was not charged. Approve a new session to keep reading.', 'retry'), { needsSession: true })
+          }
           throw new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
         } finally { changed() }
       }

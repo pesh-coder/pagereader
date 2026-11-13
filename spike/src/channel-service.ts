@@ -1,10 +1,10 @@
 // Receiver side of the reading-session payment channel. One wallet-approved
 // funding transaction per session; each page is one reader signature checked
 // locally; one settlement is broadcast when reading stops.
-import { Random, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
+import { P2PKH, PublicKey, Random, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import {
-  CHANNEL_PROTOCOL, fundingScript, maxPaid, refundTransaction, selfPaymentScript, settlementBeef,
+  CHANNEL_PROTOCOL, PAYMENT_PROTOCOL, fundingScript, maxPaid, refundTransaction, selfPaymentScript, settlementBeef,
   signChannel, stateTransaction, validateTerms, verifyChannel, type ChannelTerms,
 } from './payment-channel.js'
 import { networkFee } from './payment-cost.js'
@@ -20,6 +20,7 @@ export interface ChannelRow {
   funding_beef: string | null; paid: number; latest_sig: string | null
   credit_page: number | null; credit_edition: string | null; forfeits: number; last_activity: number
   settlement_txid: string | null; settlement_beef: string | null; funding_fee: number | null
+  reader_prefix: string | null; reader_suffix: string | null
 }
 export type Broadcast = (atomicBeef: number[], txid: string) => Promise<void>
 
@@ -51,6 +52,10 @@ export function createChannelService(options: {
   // Additive migration; earlier rows keep the book the session was opened from.
   const columns = (table: string) => new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name))
   if (!columns('channels').has('credit_edition')) db.exec('ALTER TABLE channels ADD COLUMN credit_edition TEXT')
+  // Not secret: the BRC-29 derivation the reader's wallet needs to receive its
+  // change, kept so any of the reader's devices can collect it.
+  if (!columns('channels').has('reader_prefix')) db.exec('ALTER TABLE channels ADD COLUMN reader_prefix TEXT')
+  if (!columns('channels').has('reader_suffix')) db.exec('ALTER TABLE channels ADD COLUMN reader_suffix TEXT')
   if (!columns('channel_payments').has('edition')) {
     db.exec('ALTER TABLE channel_payments ADD COLUMN edition TEXT')
     db.exec('UPDATE channel_payments SET edition=(SELECT edition FROM channels WHERE channels.id=channel_payments.channel)')
@@ -101,7 +106,7 @@ export function createChannelService(options: {
     },
 
     /** Verify the unsent funding, then sign the reader's refund before anything is broadcast. */
-    async fund(identity: string, id: string, body: { fundingBeef?: unknown, readerScript?: unknown, signature?: unknown }) {
+    async fund(identity: string, id: string, body: { fundingBeef?: unknown, readerScript?: unknown, signature?: unknown, readerPrefix?: unknown, readerSuffix?: unknown }) {
       const channel = row(id)
       if (!channel || channel.identity !== identity) throw new ChannelError(404, 'Reading session not found')
       if (channel.state !== 'offered') throw new ChannelError(409, 'Reading session was already funded')
@@ -123,8 +128,17 @@ export function createChannelService(options: {
       if (!verifyChannel(terms, stateTransaction(terms, 0), terms.readerKey, signature)) throw new ChannelError(400, 'Invalid session signature')
       const refund = await signChannel(wallet, terms, refundTransaction(terms), identity)
       const fundingFee = networkFee(funding)
-      const changed = db.prepare(`UPDATE channels SET state='funded', terms=?, funding_beef=?, latest_sig=?, funding_fee=?, last_activity=?
-        WHERE id=? AND state='offered'`).run(JSON.stringify(terms), body.fundingBeef, body.signature, fundingFee, now(), id)
+      // The change derivation must produce exactly the reader's change script.
+      const derivation = typeof body.readerPrefix === 'string' && typeof body.readerSuffix === 'string' &&
+        body.readerPrefix.length <= 64 && body.readerSuffix.length <= 64 ? { prefix: body.readerPrefix, suffix: body.readerSuffix } : undefined
+      if (derivation) {
+        const { publicKey } = await wallet.getPublicKey({ protocolID: PAYMENT_PROTOCOL, keyID: `${derivation.prefix} ${derivation.suffix}`, counterparty: identity })
+        if (new P2PKH().lock(PublicKey.fromString(publicKey).toAddress()).toHex() !== body.readerScript)
+          throw new ChannelError(400, 'Change details do not match the change address')
+      }
+      const changed = db.prepare(`UPDATE channels SET state='funded', terms=?, funding_beef=?, latest_sig=?, funding_fee=?,
+        reader_prefix=?, reader_suffix=?, last_activity=? WHERE id=? AND state='offered'`)
+        .run(JSON.stringify(terms), body.fundingBeef, body.signature, fundingFee, derivation?.prefix ?? null, derivation?.suffix ?? null, now(), id)
       if (changed.changes !== 1) throw new ChannelError(409, 'Reading session changed')
       return { terms, refundSignature: Utils.toBase64(refund) }
     },
@@ -238,7 +252,15 @@ export function createChannelService(options: {
       // The reader returning to an open session counts as activity, so the idle
       // window restarts instead of settling while the reader is back.
       if (channel.state === 'open') db.prepare("UPDATE channels SET last_activity=? WHERE id=? AND state='open'").run(now(), id)
-      return service.publicStatus(row(id)!)
+      const current = row(id)!
+      return { ...service.publicStatus(current),
+        ...(current.reader_prefix && current.reader_suffix ? { readerPrefix: current.reader_prefix, readerSuffix: current.reader_suffix } : {}) }
+    },
+
+    /** Settled sessions whose change the reader's wallet may still need to collect. */
+    toCollect(identity: string) {
+      return db.prepare(`SELECT id AS channelId, edition FROM channels WHERE identity=? AND state='settled'
+        AND settlement_txid IS NOT NULL AND created_at>? ORDER BY created_at`).all(identity, now() - 30 * 86400_000) as { channelId: string; edition: string }[]
     },
 
     publicStatus(channel: ChannelRow) {

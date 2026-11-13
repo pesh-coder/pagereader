@@ -419,7 +419,8 @@ export function createProbe(options: {
     res.json({
       identityKey: identity(req),
       ...(options.serverIdentity ? { serverIdentity: options.serverIdentity } : {}),
-      ...(channels ? { sessionsEnabled: options.channels!.enabled(identity(req)), sessionMaxSats: channels.ceiling } : {}),
+      ...(channels ? { sessionsEnabled: options.channels!.enabled(identity(req)), sessionMaxSats: channels.ceiling,
+        sessionsToCollect: db(() => channels.toCollect(identity(req))) } : {}),
       ...(req.query.ancestors === '1' ? { paymentAncestors: db(() => retainedPaymentAncestors(store, identity(req))) } : {}),
       purchases: db(() => store.purchases(identity(req), editionFor(req).id)),
       bookmark: db(() => store.bookmark(identity(req), editionFor(req).id)),

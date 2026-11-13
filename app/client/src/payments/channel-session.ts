@@ -55,6 +55,8 @@ export class SessionError extends Error {
 const MAX_FUNDING_FEE_SATS = 60
 // One reading session per wallet identity, across every book.
 const keyFor = (identity: string) => `pagestream-session-v2:${identity}`
+// Sessions whose change this wallet already received (any device may collect).
+const collectedKey = (identity: string) => `pagestream-collected-v1:${identity}`
 export const sessionPurchaseTxid = (record: SessionRecord, paid: number) =>
   `channel:${record.channelId}:${paid / record.terms!.price}`
 
@@ -65,6 +67,27 @@ export function createSessionClient(deps: SessionDeps) {
     return raw ? JSON.parse(raw) : undefined
   }
   const save = (record: SessionRecord) => deps.storage.setItem(keyFor(record.identityKey), JSON.stringify(record))
+  const collected = (): string[] => { try { return JSON.parse(deps.storage.getItem(collectedKey(identityKey)) ?? '[]') } catch { return [] } }
+  const markCollected = (channelId: string) =>
+    deps.storage.setItem(collectedKey(identityKey), JSON.stringify([...new Set([...collected(), channelId])].slice(-200)))
+  type Status = { state: string; paid: number; settlementTxid?: string; settlementBeef?: string; readerPrefix?: string; readerSuffix?: string }
+  // Receive this wallet's change output from a settlement. Safe because it only
+  // accepts an output locked to this wallet's own BRC-29 key for the derivation.
+  async function receiveOutput(status: Status, prefix: string, suffix: string, serverIdentity: string) {
+    const beef = Utils.toArray(status.settlementBeef!, 'base64')
+    const settlement = Transaction.fromAtomicBEEF(beef)
+    if (settlement.id('hex') !== status.settlementTxid) throw new SessionError('The settlement did not match its id.', false)
+    const own = await selfPaymentScript(wallet, prefix, suffix, serverIdentity)
+    const index = settlement.outputs.findIndex(output => output.lockingScript.toHex() === own)
+    if (index >= 0)
+      await wallet.internalizeAction({
+        tx: beef, description: 'Pagereader reading session change', labels: ['pagestream channel'],
+        outputs: [{ outputIndex: index, protocol: 'wallet payment', paymentRemittance: {
+          derivationPrefix: prefix, derivationSuffix: suffix, senderIdentityKey: serverIdentity,
+        } }],
+      })
+    return index >= 0
+  }
   const api = (edition: string, path: string) => `/api/editions/${encodeURIComponent(edition)}/${path}`
   let credit: SessionPage['credit'] | undefined
   // Serializes page payments, including one started in the background.
@@ -145,7 +168,7 @@ export function createSessionClient(deps: SessionDeps) {
         const zero = await signChannel(wallet, terms, stateTransaction(terms, 0), offer.serverIdentity)
         const funded = await deps.authJson<{ terms: ChannelTerms; refundSignature: string }>(
           api(edition, `channels/${offer.channelId}/fund`), 'POST',
-          { fundingBeef: Utils.toBase64(signed.tx), readerScript, signature: Utils.toBase64(zero) })
+          { fundingBeef: Utils.toBase64(signed.tx), readerScript, signature: Utils.toBase64(zero), readerPrefix, readerSuffix })
         if (JSON.stringify(funded.terms) !== JSON.stringify(terms) ||
           !verifyChannel(terms, refundTransaction(terms), terms.serverKey, Utils.toArray(funded.refundSignature, 'base64')))
           throw new SessionError('The server refund guarantee was invalid. Nothing was sent.', false)
@@ -204,6 +227,23 @@ export function createSessionClient(deps: SessionDeps) {
       const result = tail.then(run, run)
       tail = result.catch(() => undefined)
       return result
+    },
+
+    /**
+     * Collect change from settled sessions this device has no record of (for
+     * example after its saved data was cleared), using details the server kept.
+     */
+    async collectSettled(sessions: { channelId: string; edition: string }[], serverIdentity: string) {
+      const done = new Set(collected()), local = load()
+      let received = 0
+      for (const { channelId, edition } of sessions) {
+        if (done.has(channelId) || local?.channelId === channelId) continue
+        const status = await deps.authJson<Status>(api(edition, `channels/${channelId}`), 'GET')
+        if (status.state !== 'settled' || !status.settlementBeef || !status.readerPrefix || !status.readerSuffix) continue
+        if (await receiveOutput(status, status.readerPrefix, status.readerSuffix, serverIdentity)) received++
+        markCollected(channelId)
+      }
+      return received
     },
 
     /**
@@ -269,6 +309,7 @@ export function createSessionClient(deps: SessionDeps) {
         })
       const done = { ...record, state: 'received' as const, paid: status.paid, pending: undefined, settlementTxid: status.settlementTxid }
       save(done)
+      markCollected(record.channelId)
       return done
     },
   }
