@@ -60,18 +60,29 @@ export class SessionError extends Error {
   constructor(message: string, retryable: boolean) { super(message); this.retryable = retryable }
 }
 
-// Wallets report a shortfall as WERR_INSUFFICIENT_FUNDS (code 7), sometimes with
-// totals; over a phone bridge only the message may survive.
+// Wallets report a shortfall of funds as WERR_INSUFFICIENT_FUNDS (code 7),
+// sometimes with totals. Anything else (e.g. a spending allowance) is not a
+// shortfall of funds: keep the wallet's own words so the reader sees why.
 function shortfall(error: unknown) {
   const value = (error ?? {}) as { code?: unknown; message?: unknown; totalSatoshisNeeded?: unknown; moreSatoshisNeeded?: unknown }
-  if (!(value.code === 7 || value.code === 'WERR_INSUFFICIENT_FUNDS' || /insufficient/i.test(String(value.message ?? '')))) return undefined
-  const total = value.totalSatoshisNeeded, more = value.moreSatoshisNeeded
-  return { availableSats: typeof total === 'number' && typeof more === 'number' && total > more ? total - more : undefined }
+  const funds = value.code === 'WERR_INSUFFICIENT_FUNDS' || (value.code === 7 && /insufficient funds/i.test(String(value.message ?? ''))) ||
+    (value.code === undefined && /insufficient funds/i.test(String(value.message ?? '')))
+  if (!funds) return undefined
+  // Over a phone bridge the totals survive only in the text, e.g. "(1245 more
+  // satoshis are needed, for a total of 2045)".
+  const text = String(value.message ?? '').match(/(\d+) more satoshis are needed,? for a total of (\d+)/i)
+  const total = typeof value.totalSatoshisNeeded === 'number' ? value.totalSatoshisNeeded : text ? Number(text[2]) : undefined
+  const more = typeof value.moreSatoshisNeeded === 'number' ? value.moreSatoshisNeeded : text ? Number(text[1]) : undefined
+  return { availableSats: total !== undefined && more !== undefined && total > more ? total - more : undefined }
+}
+const walletWords = (error: unknown) => {
+  const value = (error ?? {}) as { code?: unknown; message?: unknown }
+  return `${typeof value.message === 'string' ? value.message.slice(0, 160) : 'no message'}${value.code !== undefined ? ` (code ${String(value.code)})` : ''}`
 }
 const notEnough = (error: unknown, message: string) => {
   const found = shortfall(error)
-  if (!found) return error
-  return Object.assign(new SessionError(message, false), { insufficientFunds: found })
+  if (!found) return new SessionError(`Your wallet refused: ${walletWords(error)}. Nothing was paid.`, false)
+  return Object.assign(new SessionError(`${message} Wallet: ${walletWords(error)}.`, false), { insufficientFunds: found })
 }
 
 const MAX_FUNDING_FEE_SATS = 60

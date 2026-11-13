@@ -370,13 +370,26 @@ test('a wallet without enough free sats gets an offer of what it can afford, and
   ;(h.reader.wallet as { createAction: unknown }).createAction = real
   const smaller = await h.session.open(h.edition.id, 780)
   assert.equal(smaller.state, 'open'); assert.equal(smaller.terms!.capacity, 720)
+  // Over a phone bridge only the wallet's text survives; its numbers still give the spendable amount.
+  ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw Object.assign(new Error(
+    'Insufficient funds in the available inputs to cover the cost of the required outputs and the transaction fee (1245 more satoshis are needed, for a total of 2045), plus whatever would be required in order to pay the fee to unlock and spend the outputs used to provide the additional satoshis.'), { code: 7 }) }
+  await h.session.close(); await h.session.receiveChange()
+  await assert.rejects(h.session.open(h.edition.id, 2000), (error: { insufficientFunds?: { availableSats?: number }; message: string }) =>
+    error.insufficientFunds?.availableSats === 800 && /1245 more satoshis/.test(error.message))
+  // A refusal that is not a lack of funds keeps the wallet's own words and offers no smaller amount.
+  ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw Object.assign(new Error('Spending authorization exceeded'), { code: 1 }) }
+  await assert.rejects(h.session.open(h.edition.id, 2000), (error: { insufficientFunds?: object; message: string }) =>
+    !error.insufficientFunds && /Spending authorization exceeded \(code 1\)/.test(error.message))
+  ;(h.reader.wallet as { createAction: unknown }).createAction = real
+  const again = await h.session.open(h.edition.id, 780)
+  void again
   // A top-up beyond the wallet is cancelled cleanly and reports the shortfall too.
   ;(h.reader.wallet as { createAction: unknown }).createAction = async (args: { options?: { sendWith?: unknown } }) => {
-    if (!args.options?.sendWith) throw Object.assign(new Error('Insufficient funds'), { code: 7 })
+    if (!args.options?.sendWith) throw Object.assign(new Error('Insufficient funds'), { code: 'WERR_INSUFFICIENT_FUNDS' })
     return real(args as never)
   }
   await assert.rejects(h.session.topUp(5000), (error: { insufficientFunds?: object }) => Boolean(error.insufficientFunds))
-  assert.equal(h.channels.row(smaller.channelId)!.state, 'open')
+  assert.equal(h.channels.row(again.channelId)!.state, 'open')
 })
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {
