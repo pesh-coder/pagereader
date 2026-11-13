@@ -1,8 +1,23 @@
 # Pagereader
 
-A Project Gutenberg classics reader built with React and a persistent Express/SQLite BSV mainnet backend. Eight immutable editions are included. The first two pages of each book are public and wallet-free; paid pages use BRC-105 and identity-bound ownership/bookmarks without product signup. The wallet menu can explicitly connect a wallet to find existing purchases.
+A reader for Project Gutenberg classics where you pay a few satoshis per page with a BSV wallet. There is no signup: your wallet's identity key is your account. Eight complete books are included. Pages 1–2 of every book are free and need no wallet; each later page costs **5 sats**.
 
-**This is an incomplete mainnet proof of concept. Hosted health checked 2026-10-27 reports purchases enabled.** Current configuration charges five sats for the page plus an independently checked miner fee capped at one sat for new page transactions. A five-sat all-in price has been discussed but has not been implemented. Native allowance enforcement, full phone/cross-device acceptance and paid latency remain open. See the [current requirements audit](docs/project-requirements-status.md) and [learnings](LEARNINGS.md).
+**Status: finished proof of concept on BSV mainnet** (live at https://pagereader.vercel.app). Readers approve one **reading balance** of up to 2,500 sats, then turn pages with no wallet prompts. Each page is paid by a wallet signature in the background. On BSV Browser (phone), 23 paid pages in a row appeared in **31 ms at the 95th percentile** against a 500 ms target. Not yet done: a full BSV Desktop run with reading balances, a real top-up on a device, and the demo recording.
+
+**Start with [LEARNINGS.md](LEARNINGS.md).** It explains how payments work, what we tried and replaced, and the wallet behaviour to watch out for.
+
+## How it works, in one paragraph
+
+The reader opens a **reading balance**, a one-way payment channel. One wallet approval locks the sats into an output that needs both the reader's and the server's signatures. The server signs a 60-day refund to the reader before anything is sent. For each page the wallet signs "the server may take 5 × n sats", and the server returns that page plus the next one on credit, so Next is instant. **Top up** refills the balance with one approval. **Withdraw** settles once and returns the unspent sats. Unused balances are returned automatically after 30 days without reading.
+
+## Repository layout
+
+| Path | What it is |
+|---|---|
+| `app/client` | React reader (Vite). Payments in `src/payments`, reader logic in `src/reader/gateway.ts`, settings in `src/payments/config.ts` |
+| `spike` | Express + SQLite server, tests (`spike/test`), scripts, and dated evidence (`spike/evidence`) |
+| `deploy` | Hosting configuration and guides (Vercel + Railway) |
+| `docs` | Plan, requirements status, review feedback and demo runbook |
 
 ## Local development
 
@@ -20,17 +35,35 @@ npm test
 npm.cmd run dev -- --local-wallet-manifest
 ```
 
-The reader is http://localhost:3108/reader/. To expose the operator research probe at the origin root, explicitly set `PAGESTREAM_RESEARCH=1` during development; production keeps research tools and legacy routes disabled. The optional localhost:80 listener serves public wallet permission metadata only. The isolated wallet-free UI preview runs on port 3112 with `node --import tsx scripts/preview-reader.ts` from `spike`; it uses no real ledger or wallet. No ngrok is required.
+The reader is at http://localhost:3108/reader/. `--local-wallet-manifest` also serves the wallet permission manifest on localhost:80, where the wallet looks for it.
 
-For a stable receiving identity, configure `spike/.env` locally from the blank [example](spike/.env.example), using your own authorized mainnet setup. Never paste keys/recovery phrases into an issue, commit or chat. A clone contains public books and application code, **not** the existing private receiving key, purchase ledger, intents, proofs, bookmarks or native grants. Do not replace a working ledger with an empty clone. Normal production startup requires a reviewed paused-state import; see the [deployment proposal](deploy/README.md).
+Reading balances are off unless the server has a receiving wallet and these settings:
+- `PAGESTREAM_CHANNELS_ENABLED=1`
+- `PAGESTREAM_CHANNEL_IDENTITIES`: a comma-separated list of allowed identity keys, or `all`
+- `PAGESTREAM_CHANNEL_MAX_SATS` (optional): a lower ceiling than the 2,500-sat default
 
-## Review and evidence
+**Previews with no wallet and no money.** Run these from the repository root:
+- `node --import tsx spike/scripts/preview-sessions.ts`: the real reader and server code with a simulated wallet at phone-like speeds, at http://127.0.0.1:3113/preview
+- `node --import tsx scripts/preview-reader.ts` from `spike`: the reader UI only, on port 3112
 
-Current deployment: [Vercel frontend + the owner's existing Railway Hobby backend](deploy/vercel-railway.md), using a persistent volume for the original SQLite ledger. Snapshot import and hosted recovery of owned pages/fees are recorded; no successful new hosted paid-page delivery is recorded. This is a personal wallet-testing POC; Railway included credits do not guarantee zero extra usage charges. Effective purchase admission was enabled at the latest health check; see the setup guide for rollback. Earlier [Render](deploy/vercel-render.md) and [strict-zero-cost research](spike/evidence/zero-cost-hosting-2026-10-19.md) are historical alternatives.
+To expose the operator research tools during development, set `PAGESTREAM_RESEARCH=1`. Production keeps them disabled.
 
-- [Authoritative plan](docs/pagestream-plan.md), [execution queue](docs/requirements-execution.md), [approved reader milestone](docs/reader-milestone-1.md).
-- [Senior review R1: changes and verification](docs/review-feedback-r1.md).
-- [Shared receipt fee repair](spike/evidence/shared-receipt-fees-2026-10-18.md), [original-proof recovery](spike/evidence/recovery-fix-2026-10-17.md), [wallet attribution](spike/evidence/spending-originator-accounting-2026-10-17.md).
-- [Evidence privacy](spike/evidence/README.md), [review draft for the team](docs/team-handoff-review.md), [six-step demo runbook](docs/mainnet-demo-runbook.md).
+## Keys and data
 
-This repository publication is authorized by the owner. The handoff remains a review draft; no direct team message or upstream issue/PR has been sent. All historical payment figures are evidence, not authorization for another transaction. Books retain their Project Gutenberg source material and notices; see each imported source/edition and the [catalogue evidence](spike/evidence/catalogue-2026-10-17.md).
+For a stable receiving identity, set up `spike/.env` from the blank [example](spike/.env.example) with your own authorised mainnet wallet. Never put keys or recovery phrases in an issue, commit or chat.
+
+A clone contains the books and the code. It does **not** contain the live receiving key, purchase ledger, balances, bookmarks or wallet grants. Don't replace a working ledger with an empty clone. Production start-up and data moves are covered in the [deployment guide](deploy/README.md).
+
+## Hosting
+
+Vercel serves the reader and forwards `/api` to the Express server on Railway (EU West), which keeps SQLite on a persistent volume. The wallet sees one address, `pagereader.vercel.app`, for all of its permissions. Details: [Vercel + Railway setup](deploy/vercel-railway.md). This is a personal wallet-testing POC; Railway's included credits don't guarantee zero charges.
+
+## Further reading
+
+- [LEARNINGS.md](LEARNINGS.md): what we learned, start here
+- [Acceptance register and remaining work](docs/project-requirements-status.md) · [Demo runbook](docs/mainnet-demo-runbook.md)
+- [Reading balance design and measurements](spike/evidence/payment-channel-research-2026-11-10.md)
+- [Original plan](docs/pagestream-plan.md) · [Execution queue](docs/requirements-execution.md) · [Senior review R1](docs/review-feedback-r1.md) · [Team handoff draft](docs/team-handoff-review.md)
+- [Evidence index and privacy notes](spike/evidence/README.md)
+
+All payment figures in this repo are evidence, not authorisation for another transaction. Books keep their Project Gutenberg source material and notices; see the [catalogue evidence](spike/evidence/catalogue-2026-10-17.md).
