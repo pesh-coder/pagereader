@@ -278,7 +278,7 @@ test('a reader whose saved data was cleared still collects its change from the s
   const fresh = h.client(new Map())
   const owed = h.channels.toCollect(h.reader.identity)
   assert.equal(owed.length, 1)
-  assert.equal(await fresh.collectSettled(owed, serverIdentity), 1)
+  assert.equal(await fresh.collectSettled(owed, serverIdentity), 100 - config.channel.settlementFeeSats - 5, 'reports the sats returned')
   const change = h.reader.internalized.at(-1) as { outputs: { outputIndex: number }[] }
   assert.equal(change.outputs[0].outputIndex, 1, 'the reader receives its own change output only')
   assert.equal(await fresh.collectSettled(owed, serverIdentity), 0, 'never collected twice on the same device')
@@ -356,6 +356,27 @@ test('a top-up abandoned after countersigning reopens the balance after a day', 
   clock += 86400_000 + 1
   await h.channels.settleIdle()
   assert.equal(h.channels.row(parent.channelId)!.state, 'open', 'the sweep reopened the balance; nothing was broadcast')
+})
+
+test('a wallet without enough free sats gets an offer of what it can afford, and nothing is paid', async t => {
+  const h = await harness(t)
+  const real = h.reader.wallet.createAction
+  const short = Object.assign(new Error('Insufficient funds'), { code: 'WERR_INSUFFICIENT_FUNDS', totalSatoshisNeeded: 5000, moreSatoshisNeeded: 4215 })
+  ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw short }
+  await assert.rejects(h.session.open(h.edition.id, 5000), (error: { insufficientFunds?: { availableSats?: number } }) =>
+    error.insufficientFunds?.availableSats === 785)
+  assert.equal(h.session.load()?.state, 'abandoned')
+  // The reader then opens what the wallet can afford.
+  ;(h.reader.wallet as { createAction: unknown }).createAction = real
+  const smaller = await h.session.open(h.edition.id, 780)
+  assert.equal(smaller.state, 'open'); assert.equal(smaller.terms!.capacity, 720)
+  // A top-up beyond the wallet is cancelled cleanly and reports the shortfall too.
+  ;(h.reader.wallet as { createAction: unknown }).createAction = async (args: { options?: { sendWith?: unknown } }) => {
+    if (!args.options?.sendWith) throw Object.assign(new Error('Insufficient funds'), { code: 7 })
+    return real(args as never)
+  }
+  await assert.rejects(h.session.topUp(5000), (error: { insufficientFunds?: object }) => Boolean(error.insufficientFunds))
+  assert.equal(h.channels.row(smaller.channelId)!.state, 'open')
 })
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {

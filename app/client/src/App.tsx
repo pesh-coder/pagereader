@@ -47,6 +47,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [checkingCosts, setCheckingCosts] = useState(false)
   const [costMessage, setCostMessage] = useState('')
   const [sessionMessage, setSessionMessage] = useState('')
+  // The wallet lacked funds for the amount asked: offer what it can afford.
+  const [shortfall, setShortfall] = useState<{ kind: 'open' | 'topup'; attempted: number; availableSats?: number } | null>(null)
   const [fontSize, setFontSize] = useState(() =>
     Math.max(
       17,
@@ -297,17 +299,23 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       setBusy(false)
     }
   }
-  async function startSession() {
+  async function startSession(budget = sessionSats) {
     if (!book || busy || lock.current || !gateway.openSession) return
     lock.current = true
     setBusy(true)
     setError('')
     setErrorAction(null)
     setSessionMessage('')
+    setShortfall(null)
     try {
-      await gateway.openSession(book, sessionSats, target)
+      await gateway.openSession(book, budget, target)
       setPanel(null)
     } catch (failure) {
+      if (failure instanceof ReaderError && failure.insufficientFunds) {
+        // Keep the panel open with smaller balances the wallet can cover.
+        setShortfall({ kind: 'open', attempted: budget, availableSats: failure.insufficientFunds.availableSats })
+        return
+      }
       setPanel(null)
       setError(failure instanceof Error ? failure.message : 'The reading session could not open. Nothing was paid.')
       return
@@ -317,15 +325,20 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     }
     void turn(book, target)
   }
-  async function topUp() {
+  async function topUp(budget = sessionSats) {
     if (!book || busy || lock.current || !gateway.topUpSession) return
     lock.current = true
     setBusy(true)
     setSessionMessage('')
+    setShortfall(null)
     try {
-      const status = await gateway.topUpSession(sessionSats)
+      const status = await gateway.topUpSession(budget)
       setSessionMessage(status ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
     } catch (failure) {
+      if (failure instanceof ReaderError && failure.insufficientFunds) {
+        setShortfall({ kind: 'topup', attempted: budget, availableSats: failure.insufficientFunds.availableSats })
+        return
+      }
       setSessionMessage(failure instanceof Error ? failure.message : 'The top-up could not finish. Nothing was taken from your wallet.')
     } finally {
       lock.current = false
@@ -358,6 +371,19 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const sessionOpen = session?.state === 'open'
   // The server may set a lower session ceiling.
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
+  // Smaller amounts to offer after a shortfall: what the wallet reported free,
+  // or fixed steps when it did not say. A top-up must still add to the balance.
+  const minimumBudget = config.channel.minCapacitySats + 60
+  const affordable = (() => {
+    if (!shortfall) return []
+    const locked = shortfall.kind === 'topup' && session ? session.capacity - session.paidSats : 0
+    const floor = shortfall.kind === 'topup' ? locked + 60 + config.priceSats : minimumBudget
+    const known = shortfall.availableSats
+    const list = known !== undefined ? [Math.floor((locked + known - 5) / 10) * 10]
+      : shortfall.kind === 'topup' ? [locked + 1060, locked + 560, locked + 260] : [2000, 1000, 500]
+    return [...new Set(list)].filter(budget => budget >= floor && budget < shortfall.attempted)
+  })()
+  const notice = gateway.sessionNotice?.() ?? null
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
   const spending = summarizeSpending(receipts)
   const history = gateway.historyState()
@@ -476,8 +502,19 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             )}
           </div>
         )}
-        {book && (session?.error || sessionMessage) && (
-          <p className="subtle session-message" role="status">{session?.error ?? sessionMessage}</p>
+        {book && (session?.error || notice || sessionMessage) && (
+          <p className="subtle session-message" role="status">{session?.error || sessionMessage || notice}</p>
+        )}
+        {book && shortfall?.kind === 'topup' && (
+          <div className="reading-tools session-tools" role="alert">
+            <span>
+              Your wallet does not have enough free sats to top up to {shortfall.attempted}
+              {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}.
+            </span>
+            {affordable.map(budget => (
+              <button key={budget} className="quiet" disabled={busy} onClick={() => void topUp(budget)}>Top up to {budget}</button>
+            ))}
+          </div>
         )}
       </header>
       {error && (
@@ -796,6 +833,20 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>
                 Approve up to {sessionSats} sats and open page {target}
               </button>
+              {shortfall?.kind === 'open' && (
+                <div role="alert">
+                  <p>
+                    Your wallet does not have {shortfall.attempted} sats free
+                    {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}. Nothing was paid.
+                    {affordable.length ? ' You can open a smaller reading balance and top it up later:' : ' Add funds to your wallet, then try again.'}
+                  </p>
+                  {affordable.map(budget => (
+                    <button key={budget} className="wide" disabled={busy} onClick={() => void startSession(budget)}>
+                      Open a {budget}-sat reading balance and page {target}
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
           )}
         </Panel>

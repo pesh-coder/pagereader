@@ -5,7 +5,9 @@ export const config = {
   // Two disjoint 20-purchase cohorts on one identity: 3–22 and 23–42.
   maxProbePage: 43,
   provisional: {
-    walletLimitSats: 5000,
+    // Monthly wallet spending limit declared in the manifest (a ceiling, not a
+    // deposit). Above one 5,000-sat balance so a top-up fits in the same month.
+    walletLimitSats: 10000,
     feeEstimateSats: null as number | null,
     maxPageFeeSats: 1,
     // Reader-only ceiling after explicit consent for the current open reader.

@@ -58,6 +58,8 @@ export class ReaderError extends Error {
   feeApproval?: PageFeeApproval
   /** A new page needs a reading session; the reader shows the session offer. */
   needsSession?: boolean
+  /** The wallet lacked funds for a balance or top-up; what it had free, if known. */
+  insufficientFunds?: { availableSats?: number }
   constructor(message: string, action: 'connect' | 'retry' | 'check') {
     super(message)
     this.action = action
@@ -90,6 +92,8 @@ export interface ReaderGateway {
   endSession?(): Promise<SessionStatus | null>
   topUpSession?(budget: number): Promise<SessionStatus | null>
   recheckSession?(): Promise<SessionStatus | null>
+  /** Latest "sats returned to your wallet" message, if any. */
+  sessionNotice?(): string | null
 }
 export interface SessionStatus {
   /** 'checking': a saved balance not yet confirmed with the server this visit. */
@@ -165,6 +169,20 @@ export function createReaderGateway(
   // older ones are settled and their change received.
   let session: SessionClient | undefined
   let sessionError: string | undefined
+  let sessionNotice: string | undefined
+  const returned = (sats: number) => { if (sats > 0) sessionNotice = `${sats} sats from your reading balance returned to your wallet.` }
+  // Wallet shortfalls carry what it had free, so the reader can offer that instead.
+  const asReaderError = (error: unknown, fallback: string, action: 'retry' | 'check' = 'check') => {
+    if (error instanceof ReaderError) return error
+    const result = new ReaderError(error instanceof Error ? error.message : fallback, action)
+    const funds = (error as { insufficientFunds?: { availableSats?: number } } | undefined)?.insufficientFunds
+    if (funds) result.insufficientFunds = funds
+    return result
+  }
+  const receivedChange = (record: SessionRecord | undefined) => {
+    if (record?.state === 'received' && record.terms) returned(record.terms.capacity - record.terms.settlementFee - record.paid)
+    changed()
+  }
   const openedHere = new Set<string>()
   const sessionClient = async () => {
     if (!wallet) throw new ReaderError('Connect your wallet first.', 'connect')
@@ -208,7 +226,7 @@ export function createReaderGateway(
       }
     }
     if (['funded', 'closing', 'settled'].includes(client.load()?.state ?? ''))
-      void client.receiveChange().then(changed, error => {
+      void client.receiveChange().then(receivedChange, error => {
         sessionError = `Returning your unspent sats did not finish: ${error instanceof Error ? error.message : 'unknown error'}`
         changed()
       })
@@ -217,7 +235,7 @@ export function createReaderGateway(
   const collectChange = () => {
     const client = session, list = me?.sessionsToCollect, serverIdentity = me?.serverIdentity
     if (client && list?.length && serverIdentity)
-      void client.collectSettled(list, serverIdentity).then(received => { if (received) changed() }, () => undefined)
+      void client.collectSettled(list, serverIdentity).then(sats => { if (sats) { returned(sats); changed() } }, () => undefined)
   }
   const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
     const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
@@ -582,8 +600,7 @@ export function createReaderGateway(
         openedHere.add(record.channelId)
         sessionError = undefined
       } catch (error) {
-        throw error instanceof ReaderError ? error
-          : new ReaderError(error instanceof Error ? error.message : 'The reading session could not open.', 'check')
+        throw asReaderError(error, 'The reading session could not open.')
       } finally {
         changed()
       }
@@ -594,13 +611,13 @@ export function createReaderGateway(
       try {
         await session.topUp(budget)
       } catch (error) {
-        throw error instanceof ReaderError ? error
-          : new ReaderError(error instanceof Error ? error.message : 'The top-up could not finish. Nothing was taken from your wallet.', 'check')
+        throw asReaderError(error, 'The top-up could not finish. Nothing was taken from your wallet.')
       } finally {
         changed()
       }
       return gateway.sessionStatus!()
     },
+    sessionNotice: () => sessionNotice ?? null,
     async recheckSession() {
       sessionError = undefined
       changed()
@@ -682,7 +699,7 @@ export function createReaderGateway(
           // charged for this page; offer a new session instead of another method.
           if (session?.load()?.state !== 'open') {
             // Collect the returned sats now rather than on the next visit.
-            void session?.receiveChange().then(changed, () => undefined)
+            void session?.receiveChange().then(receivedChange, () => undefined)
             throw Object.assign(new ReaderError('Your reading session has ended, so this page was not charged. Approve a new session to keep reading.', 'retry'), { needsSession: true })
           }
           throw new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')

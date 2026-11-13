@@ -55,7 +55,23 @@ export interface SessionDeps {
 }
 export class SessionError extends Error {
   readonly retryable: boolean
+  /** The wallet lacked funds; `availableSats` is what it reported free, when known. */
+  insufficientFunds?: { availableSats?: number }
   constructor(message: string, retryable: boolean) { super(message); this.retryable = retryable }
+}
+
+// Wallets report a shortfall as WERR_INSUFFICIENT_FUNDS (code 7), sometimes with
+// totals; over a phone bridge only the message may survive.
+function shortfall(error: unknown) {
+  const value = (error ?? {}) as { code?: unknown; message?: unknown; totalSatoshisNeeded?: unknown; moreSatoshisNeeded?: unknown }
+  if (!(value.code === 7 || value.code === 'WERR_INSUFFICIENT_FUNDS' || /insufficient/i.test(String(value.message ?? '')))) return undefined
+  const total = value.totalSatoshisNeeded, more = value.moreSatoshisNeeded
+  return { availableSats: typeof total === 'number' && typeof more === 'number' && total > more ? total - more : undefined }
+}
+const notEnough = (error: unknown, message: string) => {
+  const found = shortfall(error)
+  if (!found) return error
+  return Object.assign(new SessionError(message, false), { insufficientFunds: found })
 }
 
 const MAX_FUNDING_FEE_SATS = 60
@@ -85,14 +101,16 @@ export function createSessionClient(deps: SessionDeps) {
     if (settlement.id('hex') !== status.settlementTxid) throw new SessionError('The settlement did not match its id.', false)
     const own = await selfPaymentScript(wallet, prefix, suffix, serverIdentity)
     const index = settlement.outputs.findIndex(output => output.lockingScript.toHex() === own)
-    if (index >= 0)
+    if (index < 0) return 0
+    {
       await wallet.internalizeAction({
         tx: beef, description: 'Pagereader reading session change', labels: ['pagestream channel'],
         outputs: [{ outputIndex: index, protocol: 'wallet payment', paymentRemittance: {
           derivationPrefix: prefix, derivationSuffix: suffix, senderIdentityKey: serverIdentity,
         } }],
       })
-    return index >= 0
+    }
+    return settlement.outputs[index].satoshis ?? 0
   }
   const api = (edition: string, path: string) => `/api/editions/${encodeURIComponent(edition)}/${path}`
   let credit: SessionPage['credit'] | undefined
@@ -171,6 +189,9 @@ export function createSessionClient(deps: SessionDeps) {
         labels: ['pagestream channel'],
         outputs: [{ lockingScript, satoshis: capacity, outputDescription: 'Pagereader reading session' }],
         options: { signAndProcess: false, noSend: true, randomizeOutputs: false, returnTXIDOnly: false },
+      }).catch(error => {
+        save({ ...record, state: 'abandoned' })
+        throw notEnough(error, `Your wallet does not have ${budget} sats free for a reading balance.`)
       })
       const signable = created.signableTransaction
       if (!signable) throw new SessionError('The wallet did not prepare the session payment. Nothing was sent.', true)
@@ -260,7 +281,10 @@ export function createSessionClient(deps: SessionDeps) {
             ],
             options: { signAndProcess: false, noSend: true, randomizeOutputs: false, returnTXIDOnly: false },
           })
-        } catch (error) { await cancel(); throw error }
+        } catch (error) {
+          await cancel()
+          throw notEnough(error, `Your wallet does not have enough free sats to top up to ${budget}.`)
+        }
         const signable = created.signableTransaction
         if (!signable) { await cancel(); throw new SessionError('The wallet did not prepare the top-up. Nothing was sent.', true) }
         let next: SessionRecord, fee: number
@@ -349,7 +373,7 @@ export function createSessionClient(deps: SessionDeps) {
         if (done.has(channelId) || local?.channelId === channelId) continue
         const status = await deps.authJson<Status>(api(edition, `channels/${channelId}`), 'GET')
         if (status.state !== 'settled' || !status.settlementBeef || !status.readerPrefix || !status.readerSuffix) continue
-        if (await receiveOutput(status, status.readerPrefix, status.readerSuffix, serverIdentity)) received++
+        received += await receiveOutput(status, status.readerPrefix, status.readerSuffix, serverIdentity)
         markCollected(channelId)
       }
       return received
