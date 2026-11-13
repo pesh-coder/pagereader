@@ -4,6 +4,8 @@ Pagereader sells access to Project Gutenberg books without signup. Pages 1–2 a
 
 ## Status at a glance
 
+**Reading balance, 13 November (current):** new pages are paid only through a **reading balance** (a payment channel). The reader approves up to 5,000 sats once, fees included. Each page is then one wallet signature, and the balance stays open across reloads, days and books. **Top up** refills it with one approval; **Withdraw** returns the unspent sats at once. The owner's phone run (Pride and Prejudice, pages 3–22) measured **tap → page visible p50 24 ms / p95 32 ms**. Tap → payment accepted by the server was **p50 501 ms / p95 781 ms**, of which the server itself took about 7 ms; the rest was the phone's network. 20 pages cost about 172 sats (8.6 per page) against 28 per page before. **Open:** since the 13 November afternoon, BSV Browser refuses to open a new balance with "55 more satoshis are needed, for a total of 55" even though it shows 5,565 sats. See [section 3](#3-when-the-wallet-prompts). BSV Desktop and native top-ups are untested. [What we learned and undid](#learned-unlearned-and-still-open-1013-november).
+
 **Server region, 13 November:** the backend moved from Railway US West to EU West (data verified before and after). Reader-path round trip p50 fell from 390 to 261 ms, which is most of the remaining time between Next and an accepted session payment. [Details](spike/evidence/payment-channel-research-2026-11-10.md).
 
 **Reading-session pilot, 11 November:** on the owner's phone (BSV Browser 1.6.3, mainnet) channel signatures took 33–39 ms; after one approval, Next showed pages 38–44 in **19–31 ms**. The first page after approval took 621 ms, now delivered on credit at activation too. Session fees were 72 sats once (42 opening + 30 settling) instead of ~23 per page. Sessions are now the reader's payment flow at up to 5,000 sats per session; one-page preparation and pilot-only controls were removed. Final timed runs on Desktop and phone remain. [Pilot and changes](spike/evidence/payment-channel-research-2026-11-10.md).
@@ -56,6 +58,29 @@ The server has a persistent wallet-toolbox receiving wallet; the scaffold's `Pro
 
 ## 2. How a page gets paid
 
+**Current flow (since 13 November): a reading balance.** BSV disabled relative timelocks (OP_CHECKSEQUENCEVERIFY), and the 2026 Chronicle upgrade did not restore them. So this is a one-way payment channel protected by a refund with a fixed unlock date.
+
+1. **Open (one wallet approval).** The reader's wallet locks up to 5,000 sats, fees included, into an output that needs both the reader's and the server's signatures. Before anything is sent, the server signs a **refund** to the reader that unlocks after 60 days; the reader checks it, then the funding is broadcast.
+2. **Each page.** The reader's wallet signs "the server may now take 5 × n sats" (`createSignature`, about 35–100 ms on the phone). The request is plain, with no BRC-103 handshake: the signature authenticates it. The server checks the amount is exactly one page more and verifies the signature (about 7 ms in total), then records the purchase. The next page comes with the response **on credit**, so Next shows it at once while its own signature follows in the background.
+3. **Top up (one approval).** One transaction spends the old balance and new wallet sats into a new full balance, and pays the server for the pages already read. Nothing is sent until the server has signed the refund for the new balance.
+4. **Withdraw / end.** The server adds its signature to the latest page state and broadcasts once. The reader's change goes back to its wallet as an ordinary BRC-29 payment.
+5. **Automatic return.** After 30 days without reading, or 55 days without a top-up, the server settles and returns what is left before the refund unlocks.
+
+**Server checks for a page:** the session exists and is open; the amount is exactly one page more than the last accepted one; the signature is the reader's (low-S) over that exact state; the page isn't already owned and has no unfinished payment that may have been sent. Then it records ownership, receipt and credit in one database transaction.
+
+| Case | Result |
+|---|---|
+| Wrong or forged signature | `400`, no page |
+| Skips or repeats an amount | `409`, no page |
+| Same signature resent for the same page (lost response) | The same page again, never charged twice |
+| Same signature used for another page or book | `409` |
+| Session closed or settled | `409` with `SESSION_CLOSED`; the reader asks for a new balance |
+| Credited page not paid for | At most two per balance, then credit stops |
+
+Tests: [payment-channel](spike/test/payment-channel.test.ts), [payment-session](spike/test/payment-session.test.ts), [reader-session](spike/test/reader-session.test.ts). Design and measurements: [evidence](spike/evidence/payment-channel-research-2026-11-10.md).
+
+**Historical flow (until 13 November), kept only to check and recover earlier attempts:** BRC-105 per-page payments, described below. It can no longer start a purchase for a new page.
+
 We use **BRC-105**, the HTTP payment challenge flow. **Atomic BEEF** carries the transaction and proof data needed for verification.
 
 1. The client requests an unowned page with a durable request ID. The server reserves the identity/edition/page and returns `402 Payment Required`, a 5-sat price and a derivation prefix.
@@ -103,6 +128,15 @@ The subsequent documentation review found a deployment choice we have not evalua
 
 ## 3. When the wallet prompts
 
+**With reading balances (current), on BSV Browser 1.6.3:**
+
+- **Opening a balance:** one spending approval for up to 5,000 sats. The first time, the wallet also shows a grouped prompt for the `pagestream channel` signing permission ("Sign each page of an approved reading session").
+- **Pages:** no prompts. On 13 November, 20 pages were read in under 2 minutes with only the opening approvals.
+- **The signing permission came back** after about 35 minutes, apparently a time-limited grant. It also came back after the manifest's display text changed (see below).
+- **Unresolved, 13 November:** after the 17:04 balance, every new balance is refused with `insufficient funds` (code 7), "55 more satoshis are needed, for a total of 55", for any amount, while the wallet shows 5,565 sats. The wallet's own code says that total is the outputs plus the fee, so the transaction being funded pays nothing. It is almost certainly the wallet's own housekeeping (likely updating Pagereader's permission or allowance on-chain after the 5,000-sat monthly allowance was used), and it found no free coin. Not yet confirmed; the next check is giving the phone wallet a separate small coin.
+
+**Before reading balances (one approval per page, historical):**
+
 **“Approve 5,000 sats this session” is not what we observed.** On Desktop 3.1.1.0:
 
 1. Initial use showed separate protocol/spending prompts. Plain **Authorize** was one-time, so later pages prompted again.
@@ -129,6 +163,37 @@ The shared Browser wallet package hard-codes 100 sat/kB, including the package u
 - **Timing visibility:** `AuthFetch` filters custom response headers; timing needs capturing underneath it. Cold `verifyHmac` took 1.73 s. [Latency](spike/evidence/latency-investigation-2026-10-17.md).
 - **Tooling:** scaffold typing failed with TypeScript 6, so we pinned 5.8.3; the docs MCP was unavailable. [Package findings](spike/evidence/package-facts.md).
 - **Bundle size:** the deferred SDK chunk was about 518 kB before gzip. [Reader review](docs/reader-milestone-1.md).
+
+## Learned, unlearned and still open (10–13 November)
+
+**Learned**
+
+- **Per-page latency was never an algorithm problem.** About 6.5 s per paid page was spent in the payer's `createAction` (~1.5 s) and the server's `internalizeAction` (~2–3 s). Speeding up proof processing saved milliseconds. Taking the transaction out of the page turn (one signature per page) brought the turn to about 25 ms.
+- **The network round trip is the floor for confirmed payment.** Moving the server from Railway US West to EU West cut the round trip from 390 to 261 ms. Vercel's proxy adds only 7–10 ms (direct-to-server check on the phone), with an occasional spike. The page is visible in about 25 ms; acceptance takes about one phone round trip.
+- **Fixed-date refunds are the BSV constraint.** Lightning channels never expire because Bitcoin has relative timelocks and segwit; BSV has neither, so every held balance needs an unlock date and periodic settlement. Comparable products (Phoenix, Fountain, Nostr Wallet Connect) show one balance with an approve-once budget; none pays on-chain per action.
+- **A wallet treats anything it reads as part of the app's identity.** Renaming the app name and a permission description in the manifest (Pagestream → Pagereader) made BSV Browser re-ask for permissions. Connection then failed until the app was restarted. Internal identifiers (`pagestream channel`, storage keys, `PAGESTREAM_*` settings) must not change; ask before touching anything wallet- or backend-facing.
+- **BSV Browser's wallet can answer slower than the SDK's 1-second discovery window** ("No wallet available over any communication substrate"). Inside BSV Browser, the reader now talks to the React Native bridge directly and waits up to 20 s.
+- **Wallet errors hide their cause.** The SDK replaces unrecognised codes with "Wallet operation failed", and over the phone bridge numeric fields are dropped (only the text survives). Messages now name the step and include the wallet's own words and code.
+- **Change that comes back is only in the balance once internalized.** Returned sats sit at the reader's address until the reader tells the wallet (`internalizeAction`). The details needed are now also kept on the server, so any device can collect them.
+- **Two SDK copies (client and server) must only exchange bytes.** Mixing their objects fails with errors such as `script[serializedBytes] is not a function`.
+
+**Unlearned (tried, then reversed or removed)**
+
+| Tried | Why it was reversed |
+|---|---|
+| "Pay for one next page ahead" (read-ahead) | Only hid ~7 s of payment work and bought pages the reader might not open; superseded by per-page signatures and credit |
+| Sessions that settled 30 minutes after the last page, and on leaving | The owner wants approve-once; leaving now keeps the balance, and returning restarts the idle window |
+| Falling back to the per-page purchase when a session had just closed | It asked the wallet to pay for a page outside the session; new pages now require a balance |
+| Renaming the wallet manifest text | Caused permission re-prompts; visible app text only, from now on |
+| Raising the manifest's monthly limit to 10,000 | Unnecessary change; reverted to 5,000 at the owner's request |
+| "Fit to wallet": offering ever-smaller balances after a refusal | The wallet's shortfall didn't depend on the amount, so every smaller offer failed the same way; removed |
+| `keepalive` on page payments | Only needed for settle-on-leave; may send requests outside the warm connection |
+| A free "check session signing" button and an always-visible capture bar | Test-only; removed |
+| Sending payments straight to Railway, bypassing Vercel | Measured gain of 7–10 ms; not worth changing the route |
+
+**Bugs found by the owner's testing, now fixed:** a closed balance shown as usable after reload (now checked with the server first, with Retry); the idle timer counting from the last page rather than the return; a half-started old-style payment blocking a page (now superseded if it never produced a transaction); the timing capture missing background payments and their receipts.
+
+**Still open:** the BSV Browser refusal above; first BSV Desktop run with reading balances; a native top-up; confirming "payment accepted" under 500 ms on the phone's network; the 90-second demo.
 
 ## 5. Python (optional)
 
