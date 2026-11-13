@@ -1,217 +1,187 @@
 # Pagereader: what we learned
 
-Pagereader sells access to Project Gutenberg books without signup. Pages 1–2 are free; later pages cost 5 sats **plus a miner fee**. This note explains what works and what remains against the POC brief.
+Pagereader is a proof of concept (POC): a reader for Project Gutenberg books where you pay a few satoshis per page with a BSV wallet. There is no signup. Pages 1–2 of every book are free; each later page costs **5 sats**. It runs on BSV mainnet with real money, tested on BSV Browser (phone) and BSV Desktop.
 
-## Status at a glance
+This file is written for the next person who picks up the repo. It explains what we built, what worked, what didn't, and why. Read the first two sections for the short version; the rest is the detail behind them.
 
-**Reading balance, 13 November (current):** new pages are paid only through a **reading balance** (a payment channel). The reader approves up to 5,000 sats once, fees included. Each page is then one wallet signature, and the balance stays open across reloads, days and books. **Top up** refills it with one approval; **Withdraw** returns the unspent sats at once. The owner's phone run (Pride and Prejudice, pages 3–22) measured **tap → page visible p50 24 ms / p95 32 ms**. Tap → payment accepted by the server was **p50 501 ms / p95 781 ms**, of which the server itself took about 7 ms; the rest was the phone's network. 20 pages cost about 172 sats (8.6 per page) against 28 per page before. **Open:** since the 13 November afternoon, BSV Browser refuses to open a new balance with "55 more satoshis are needed, for a total of 55" even though it shows 5,565 sats. See [section 3](#3-when-the-wallet-prompts). BSV Desktop and native top-ups are untested. [What we learned and undid](#learned-unlearned-and-still-open-1013-november).
+**Where the POC ended (13 November 2026):** readers approve one **reading balance**, then turn pages with no wallet prompts. On the owner's phone, 23 paid pages in a row appeared in **31 ms at the 95th percentile** (target: 500 ms), with no errors. The approach that got us there is a one-way payment channel, explained in [section 3](#3-paying-for-pages-the-final-design-a-reading-balance).
 
-**Server region, 13 November:** the backend moved from Railway US West to EU West (data verified before and after). Reader-path round trip p50 fell from 390 to 261 ms, which is most of the remaining time between Next and an accepted session payment. [Details](spike/evidence/payment-channel-research-2026-11-10.md).
+---
 
-**Reading-session pilot, 11 November:** on the owner's phone (BSV Browser 1.6.3, mainnet) channel signatures took 33–39 ms; after one approval, Next showed pages 38–44 in **19–31 ms**. The first page after approval took 621 ms, now delivered on credit at activation too. Session fees were 72 sats once (42 opening + 30 settling) instead of ~23 per page. Sessions are now the reader's payment flow at up to 5,000 sats per session; one-page preparation and pilot-only controls were removed. Final timed runs on Desktop and phone remain. [Pilot and changes](spike/evidence/payment-channel-research-2026-11-10.md).
+## 1. The ten things to know first
 
-**Reading sessions (payment channel), 10 November:** one wallet-approved funding per session, then one wallet signature per page and one settlement when reading stops; the next page is delivered on credit so Next shows it at once. Integrated behind backend switches (off by default) with per-page payment as fallback. 161 tests pass; an offline browser preview using native-like wallet delays measured Next at 8–23 ms after ≥0.5 s of reading. Native signing behaviour and a paid pilot remain. [Research, design and results](spike/evidence/payment-channel-research-2026-11-10.md).
+1. **Don't put a blockchain transaction inside a page turn.** Paying each page as its own transaction took about 6.5 s per page, almost all of it inside the wallets (`createAction` on the reader's side, `internalizeAction` on the server's side). No amount of code optimisation fixed that. Replacing it with *one signature per page* inside a pre-funded balance brought a page turn to about 25 ms.
+2. **Show the page first, settle the payment after.** Each page response carries the *next* page "on credit", so Next is instant. The signature for it follows in the background. The server caps unpaid credit at two pages per balance.
+3. **BSV has no relative timelocks, so every held balance needs a fixed end date.** Lightning-style channels that never expire are not possible on BSV (no `OP_CHECKSEQUENCEVERIFY`, and the 2026 Chronicle upgrade did not restore it). Our balance has a refund that unlocks after 60 days, and the server returns unspent sats before that.
+4. **The wallet's monthly allowance counts what goes out and never subtracts what comes back.** If a balance equals the allowance, the reader can open only one balance a month. Withdrawing the unspent sats does not help. We set the balance to **2,500 sats, half the 5,000 allowance**. [Details](#the-55-more-satoshis-refusal).
+5. **If a wallet error doesn't change when you change the input, it isn't about your input.** "55 more satoshis are needed" stayed exactly the same for 5,000, 4,860 and 4,790 sats. Reading the wallet's own source code found the real cause in minutes, after hours of guessing.
+6. **Treat everything a wallet reads as part of the app's identity.** Renaming the app or a permission description in the manifest made BSV Browser ask for every permission again, and broke connecting until a restart. Never rename permission names, labels, storage keys or the manifest without a reason.
+7. **After a reload, nothing about the wallet is known yet.** The phone doesn't stay connected across reloads. The reader must reconnect and confirm a saved balance with the server *before* deciding to ask for a new one. Getting this wrong showed "Approve 2,500 sats" to readers who already had a balance.
+8. **Miner fees dwarf a 5-sat price unless you batch.** Per-page transactions cost 23 sats in fees on a 5-sat page. A reading balance pays about 72 sats in fees *once* (open + settle), whatever the number of pages.
+9. **Low fee rates can strand later payments.** Funding the phone from Desktop at 1 sat/kB left those transfers unmined, and every phone payment built on them got stuck. Keep wallets at **100 sats/kB**.
+10. **Wallet errors lose detail on the way to you.** The SDK replaces unrecognised codes with "Wallet operation failed", and the phone bridge drops numeric fields (only the message text survives). Always show the wallet's own words and code to the reader.
 
-**Algorithm research, 10 November:** largest-first adaptive proof merging avoids repeatedly parsing overlapping ancestor chains. Six synthetic workload shapes compare the actual app implementation, its frozen predecessor and isolated SDK 4.0.1; the latter does not justify a production dependency upgrade. Overlapping-chain medians improve 19-61%, while independent branches can be 2-5 ms slower. Structural completeness, exact subject bytes, fees and legacy repair remain checked. This is a local CPU improvement; the native wallet/provider wait remains seconds. [Research, algorithmic bounds and complete results](spike/evidence/latency-algorithm-research-2026-11-10.md).
+---
 
-**Latency update, 9 November:** the authorized Browser page-36 pilot records 7.459 seconds preparing the payment/content and 17 ms from Next to visible page, one accepted 28-sat purchase, and phone receipts totaling 952 sats. A ready page can open quickly because payment finishes while the reader stays on the previous page; asynchronous code alone does not make the wallet/provider faster. The continuous option requires explicit consent once per uninterrupted visible reading visit. It prepares only one page ahead, replenishes after Next, and pauses on jumps. Already-paid skipped pages remain owned without another charge; in-flight payments may finish. Preparation, new payments and ready-page display are reported separately. The original paid-within-click 500-ms requirement remains unproven. All 142 tests and both builds/lint pass. No additional paid test was run. [Research, evidence and limitations](spike/evidence/latency-solution-review-2026-11-09.md).
+## 2. Results
 
-**Current acceptance, 9 November:** the owner confirms item 3 (remaining device, accounting/recovery checks and sharing this note) finished. Item 2 is already accepted under the revised approval scope. Only item 1 remains: page-turn latency and its final timing/demo verification. This supersedes older statements below about unconfirmed item-3 checks or team sharing; no new native evidence capture was supplied with the confirmation.
-
-**Owner acceptance update, 8 November:** item 2 is complete for this POC: the owner confirms approval/input on the first unowned page, then explicit Next turns open without repeated approval. The original native 5,000-sat reading-session cap, expiry and allowance-accounting requirements are waived. The observed Desktop monthly grant and phone auto-spend setting are not proof of those features. Desktop's zero allowance-spend display has not been diagnosed; page receipts remain the accounting source to verify. Older open-session findings below are historical and superseded by this decision. Work proceeds to final correctness/device/accounting checks (item 3), then latency (item 1); final timed demonstration depends on the latency result.
-
-- Built: eight complete books, wallet-free previews, paid delivery/recovery, identity-based bookmarks and a visible page-spend counter.
-- Observed: three Desktop mainnet purchases totaling 74 sats and phone purchases through page 34, with 896 sats recorded (160 page prices + 736 miner fees). Pages 3 and 4 cost 28 sats each; the owner confirmed pages 5 and 6 opened without native wallet prompts or repeated app fee approval. Page 4 was reported almost instant; this is not an instrumented speed result. The original phone page/grant and their funding transfers are mined; the earlier mining blocker is closed.
-- Hosted: Vercel reader + Railway Express server, receiving wallet and persistent SQLite. Health checked 2026-11-07: mainnet, payment-ready, purchases enabled. All 16 public previews passed wallet-free HTTP checks; the owner also confirmed both Holmes previews on the phone after app logout, with no errors or wallet prompt. Free-preview acceptance passes.
-- **The POC is not complete:** paid-page speed, remaining independent-device/fault/concurrency checks and the timed demo remain open. The owner accepted existing approval behavior and waived same-identity cross-device resume on 8 November; the waived capabilities are not implementation passes.
-- The [acceptance register and remaining work](docs/project-requirements-status.md) separates implementation gaps from live checks. Team sharing is also unconfirmed.
-- The [senior review changes](docs/review-feedback-r1.md) are deployed. Phone page 3 opened and resumes at 28 sats; repeat paid turns now work; broader pending/recovery accounting remains open.
-
-**Pricing decision, updated 2026-11-07:** the seller receives 5 sats per page and the reader pays actual miner fees on top. One app approval now permits fees up to **23 sats per new page**, at most **28 sats total**, while this reader remains open. Each Next click requests one page without repeating the app approval. Lower fees cost less; higher or unknown fees stop for review. Reload/logout clears this app consent. Use the maintainer-recommended **100 sats/kB** for the wallet; Desktop returned to 250 after restoration and still needs its latest setting confirmed. This app fee ceiling is separate from the wallet's monthly allowance: it does not satisfy the original wallet-managed session requirement or prove 500-ms turns.
-
-**Approval acceptance revised, 8 November:** accept the working first-unowned-page approval followed by prompt-free Next turns. Strict native 5,000-sat session scope, expiry and allowance consumption are waived. No app/server cap is introduced as a substitute, and no wallet is modified. Closing the tab stops new app requests; an already-submitted payment may still finish.
-
-## 1. Who is calling
-
-The wallet's **identity key** is a public key used to find purchases and bookmarks. There is no account registration.
-
-1. Browsing and free pages bypass authentication and do not load the wallet helper.
-2. Explicit paid access, **Continue reading** or **Connect wallet** loads the generated helper, which connects to the BRC-100 wallet and obtains its identity public key. The menu shows that public identity; Log out clears the active app connection while retaining purchases and recovery records. Private keys stay in the wallet.
-3. The SDK's `AuthFetch` performs the BRC-103 mutual-authentication handshake at `/.well-known/auth`, exchanging public identities and proving control through signed messages. Requests carry `x-bsv-auth-identity-key` plus session/signature data; the header alone is not proof. The server verifies them with `@bsv/auth-express-middleware`.
-4. Routes read `req.auth.identityKey`, supplied by the verified authentication context, and use it in SQLite queries. A reader-supplied account field is not trusted.
-
-The [actual schema](spike/src/store.ts):
-
-| Table | Key | Other stored fields |
+| Run | What was measured | Result |
 |---|---|---|
-| `purchases` | `identity, edition, page` | unique `txid`, `sats` |
-| `bookmarks` | `identity, edition` | `page`, `displayed_at` |
-| `intents` | `identity, edition, page` | `request_id`, `prefix`, `txid`, `state` |
-| `replay_claims` | `txid` | used-payment marker |
-| `payment_proofs` | `txid` | `identity, edition, page, proof` |
-| `purchase_costs` | `txid` | `fee_sats`, `source` |
-| `intent_recoveries` | `identity, edition, page, request_id` | previous state and recovery reason/time |
+| Per-page transactions, phone, 7 Nov | Tap → page visible, 13 pages | median **6.51 s** (5.75–7.61 s). Target missed |
+| Reading balance, phone, 13 Nov (first run) | Tap → page visible, 20 pages | p50 24 ms, **p95 32 ms** |
+| Reading balance, phone, 13 Nov (final run, after reload fix) | Tap → page visible, 23 pages (4–26) | **p95 31 ms**, max 32 ms, 0 errors, 0 wallet prompts |
+| Same final run | Wallet signature per page | 41–74 ms |
+| Same final run | Payment confirmed by the server (background) | median 389 ms, p95 584 ms, max 619 ms |
 
-No email, password, card or profile fields exist. `edition` identifies a fixed version of a book's pages. A purchase row means “this identity owns page 6 of this edition.”
+The 500 ms target is "tap to visible page", and it is met. The background confirmation sits close to one phone-to-server round trip: the server's own work is about 8 ms, and the rest is the network (phone → Vercel → Railway). Moving the server from Railway US West to EU West cut that round trip from 390 to 261 ms. Bypassing Vercel and calling Railway directly saved only 7–10 ms, so we kept the single address.
 
-The server has a persistent wallet-toolbox receiving wallet; the scaffold's `ProtoWallet` alone is not that receiver. **Continue reading** retrieves ownership and the last displayed bookmark without buying anything. Desktop recovery and same-wallet phone resume work; matching Desktop/Browser identities for cross-device resume is unverified. The active reader's no-account audit passed on 7 November.
+**Cost:** 20 pages through a reading balance cost about 172 sats in total (8.6 per page). With per-page transactions they cost 28 sats per page (5 price + 23 fee).
 
-## 2. How a page gets paid
+---
 
-**Current flow (since 13 November): a reading balance.** BSV disabled relative timelocks (OP_CHECKSEQUENCEVERIFY), and the 2026 Chronicle upgrade did not restore them. So this is a one-way payment channel protected by a refund with a fixed unlock date.
+## 3. Paying for pages: the final design (a reading balance)
 
-1. **Open (one wallet approval).** The reader's wallet locks up to 5,000 sats, fees included, into an output that needs both the reader's and the server's signatures. Before anything is sent, the server signs a **refund** to the reader that unlocks after 60 days; the reader checks it, then the funding is broadcast.
-2. **Each page.** The reader's wallet signs "the server may now take 5 × n sats" (`createSignature`, about 35–100 ms on the phone). The request is plain, with no BRC-103 handshake: the signature authenticates it. The server checks the amount is exactly one page more and verifies the signature (about 7 ms in total), then records the purchase. The next page comes with the response **on credit**, so Next shows it at once while its own signature follows in the background.
-3. **Top up (one approval).** One transaction spends the old balance and new wallet sats into a new full balance, and pays the server for the pages already read. Nothing is sent until the server has signed the refund for the new balance.
-4. **Withdraw / end.** The server adds its signature to the latest page state and broadcasts once. The reader's change goes back to its wallet as an ordinary BRC-29 payment.
-5. **Automatic return.** After 30 days without reading, or 55 days without a top-up, the server settles and returns what is left before the refund unlocks.
+A reading balance is a one-way payment channel between the reader and the Pagereader server.
 
-**Server checks for a page:** the session exists and is open; the amount is exactly one page more than the last accepted one; the signature is the reader's (low-S) over that exact state; the page isn't already owned and has no unfinished payment that may have been sent. Then it records ownership, receipt and credit in one database transaction.
+1. **Open (one wallet approval).** The reader's wallet locks up to 2,500 sats, fees included, into an output that needs *both* the reader's and the server's signatures to spend. Before anything is broadcast, the server signs a **refund** to the reader that unlocks after 60 days. The reader checks it, and only then is the funding sent. If Pagereader vanished, the reader would get the sats back on day 60.
+2. **Each page (no prompt).** The reader's wallet signs "the server may now take 5 × n sats" with `createSignature` (about 50 ms on the phone). The request is a plain POST: the signature itself proves who sent it, so no BRC-103 handshake is needed. The server checks that the amount is exactly one page more than last time, verifies the signature, records the purchase and returns the page plus the next one on credit.
+3. **Top up (one approval).** One transaction spends the old balance plus new wallet sats into a new full balance, and pays the server for pages already read. Nothing is sent until the server has signed the refund for the new balance.
+4. **Withdraw.** The server adds its signature to the latest signed state and broadcasts once. The reader's unspent sats come back to the wallet as a normal BRC-29 payment.
+5. **Automatic return.** After 30 days without reading, or 55 days without a top-up, the server settles and returns what is left, well before the 60-day refund unlocks.
+6. **Reloads, days and books.** The balance stays open across all of them. One balance per wallet pays for pages in any book.
+
+**What the server rejects:**
 
 | Case | Result |
 |---|---|
 | Wrong or forged signature | `400`, no page |
-| Skips or repeats an amount | `409`, no page |
-| Same signature resent for the same page (lost response) | The same page again, never charged twice |
-| Same signature used for another page or book | `409` |
-| Session closed or settled | `409` with `SESSION_CLOSED`; the reader asks for a new balance |
-| Credited page not paid for | At most two per balance, then credit stops |
+| An amount that skips or repeats a step | `409`, no page |
+| The same signature resent for the same page (lost response) | The same page again, never charged twice |
+| The same signature used for another page or book | `409` |
+| Balance closed or settled | `409 SESSION_CLOSED`; the reader is offered a new balance |
+| Credited pages never paid for | At most two per balance, then credit stops |
 
-Tests: [payment-channel](spike/test/payment-channel.test.ts), [payment-session](spike/test/payment-session.test.ts), [reader-session](spike/test/reader-session.test.ts). Design and measurements: [evidence](spike/evidence/payment-channel-research-2026-11-10.md).
+**Settings** (in [config.ts](app/client/src/payments/config.ts)): balance 2,500 sats, price 5 sats, settlement fee 30 sats, opening fee capped at 60 sats, refund after 60 days, idle return after 30 days, latest settlement at 55 days.
 
-**Historical flow (until 13 November), kept only to check and recover earlier attempts:** BRC-105 per-page payments, described below. It can no longer start a purchase for a new page.
+**Code:** reader side in [channel-session.ts](app/client/src/payments/channel-session.ts) and [payment-channel.ts](app/client/src/payments/payment-channel.ts); server side in [channel-service.ts](spike/src/channel-service.ts); reader logic in [gateway.ts](app/client/src/reader/gateway.ts). **Tests:** [payment-channel](spike/test/payment-channel.test.ts), [payment-session](spike/test/payment-session.test.ts), [reader-session](spike/test/reader-session.test.ts). **Design and measurements:** [research note](spike/evidence/payment-channel-research-2026-11-10.md).
 
-We use **BRC-105**, the HTTP payment challenge flow. **Atomic BEEF** carries the transaction and proof data needed for verification.
+---
 
-1. The client requests an unowned page with a durable request ID. The server reserves the identity/edition/page and returns `402 Payment Required`, a 5-sat price and a derivation prefix.
-2. `AuthFetch` asks the wallet to `createAction`, paying the server's BRC-29 derived output key. Our wrapper requests an unsigned action with `noSend` (do not broadcast).
-3. After the reader approves the fee ceiling, the app checks the output and actual miner fee against **23 sats per page**, then asks the wallet to sign, still without broadcasting. A higher quote needs a separate approval for that page only; unknown fees remain blocked. Unapproved/legacy calls retain their 1-sat fallback.
-4. It saves the signed proof locally before broadcasting that exact transaction.
-5. `AuthFetch` retries with `x-bsv-payment` carrying the Atomic BEEF and derivation data, alongside the original `x-bsv-request-id`.
-6. The server validates and accepts payment, commits ownership and returns the page. The old page stays visible until then; the bookmark follows display.
+## 4. The first design, and why it was replaced (per-page transactions)
 
-**Server checks, in execution order:** authenticate; match request ID and prefix to the identity/edition/page intent; reject a changed or differently bound transaction; have payment middleware validate the transaction and required output; accept it through `internalizeAction`; atomically commit the replay claim, purchase, known fee and confirmed intent before serving text. [Implementation](spike/src/probe.ts).
+Until 13 November each page was its own on-chain payment, using **BRC-105** (an HTTP `402 Payment Required` challenge, then a retry carrying the payment). The code is still there, but only to check and recover old payments; it can't start a new purchase.
 
-| Case | Result |
+How it worked:
+1. The reader asks for a page. The server reserves it and answers `402` with the price.
+2. The SDK's `AuthFetch` asks the wallet to `createAction` (build a transaction) without broadcasting. The app checks the output and the miner fee (at most 23 sats), then asks the wallet to sign.
+3. The app saves the signed proof locally, then retries the request carrying the transaction (Atomic BEEF).
+4. The server accepts it with `internalizeAction`, records ownership in one database transaction, and returns the page.
+
+What it taught us:
+- **It was slow, and not fixably so.** About 1.5 s in the reader's wallet and 2–3 s in the server's wallet per page (the server's wallet used remote storage). Smaller proofs (3,612 → 302 bytes) and faster proof merging (19–61% faster) saved milliseconds, not seconds. [Latency investigation](spike/evidence/receiver-latency-investigation-2026-11-07.md), [algorithm research](spike/evidence/latency-algorithm-research-2026-11-10.md).
+- **It was expensive.** 5 sats price + 23 sats fee per page at 100 sats/kB.
+- **Chains of unconfirmed payments hit a wallet limit.** After about 30 quick purchases the phone failed with "Maximum BEEF depth exceeded. Limit is 12", because each payment's proof carried its unmined ancestors. Passing known ancestors fixed it. [Pilot](spike/evidence/phone-page33-pilot-2026-11-07.md).
+- **Recovery is the hard part.** A payment can be signed, sent or accepted with the response lost. Every state had to be saved and reconciled without ever creating a second charge. [Recovery fix](spike/evidence/recovery-fix-2026-10-17.md).
+- **"Paying the next page in advance" only hid the delay** and bought pages the reader might never open, so it was dropped.
+
+---
+
+## 5. Wallet permissions and prompts
+
+The app publishes a **manifest** ([manifest.ts](spike/src/manifest.ts)) listing the permissions it needs and a **monthly spending allowance** of 5,000 sats. The wallet stores each grant as a small on-chain "permission token", which costs a few sats to create or renew.
+
+What the reader sees on BSV Browser 1.6.3:
+- **Opening a balance:** one spending approval. The first time, also a grouped prompt for the `pagestream channel` signing permission ("Sign each page of an approved reading session").
+- **Pages:** no prompts.
+- **The signing permission came back** after about 35 minutes (apparently a time-limited grant), and again after the manifest's display text changed.
+
+### The "55 more satoshis" refusal
+
+On 13 November BSV Browser refused every new balance with "Insufficient funds … (55 more satoshis are needed, for a total of 55)" (code 7), for any amount, while showing 5,565 sats.
+
+**Cause** (confirmed in the wallet's source, `WalletPermissionsManager` in `@bsv/wallet-toolbox`): when an app asks to spend, the wallet:
+1. builds the payment and **reserves the coins** that will fund it;
+2. checks the app's monthly allowance, adding up everything the app sent out this month. **Sats that came back are not subtracted**, so the earlier 5,000-sat balance had used the whole month even though 4,810 sats had been withdrawn;
+3. finds the allowance exceeded, so it **renews the permission on-chain**: a small separate transaction with about a 55-sat fee;
+4. finds no free coin for that renewal, because step 1 reserved them all, and fails.
+
+The 55 never changed because it was the renewal's cost, not the balance. That's why offering smaller balances never helped.
+
+**Fixes:**
+- Default balance lowered to **2,500 sats**, half the allowance. A reader can open or top up twice a month before any renewal is needed.
+- When it does happen, a **separate small coin** (about 300 sats) in the phone wallet lets the renewal pay its fee. The month rolling over (1st, UTC) also resets the count.
+- With both changes, the owner's next 2,500-sat balance opened the same evening (opening fee 72 sats).
+
+### Older permission findings (per-page era)
+- On Desktop 3.1.1.0, plain **Authorize** was one-time, so every page prompted. A grouped **Select App Permissions** grant saved a 5,000-sat monthly allowance and then pages ran with no prompts. Saving that grant cost 5 sats on Desktop and 199 sats on the phone. [Grant evidence](spike/evidence/grant-only-run-2026-10-17.md), [permission costs](spike/evidence/permission-cost-review-2026-10-17.md).
+- The allowance was undercounted on Desktop: spending labelled with a port (`localhost:3108`) wasn't counted against the hostname allowance (6 sats counted against 74 spent). [Investigation](spike/evidence/spending-originator-accounting-2026-10-17.md), [follow-up](docs/wallet-originator-follow-up.md).
+- On localhost the wallet looked for the manifest on port 80, so the dev server can serve it there too. [Discovery](spike/evidence/allowance-discovery-2026-10-17.md).
+
+---
+
+## 6. Identity without accounts
+
+There is no registration. The wallet's **identity key** (a public key) is the account.
+
+1. Browsing and free pages never load the wallet code.
+2. Paying, **Continue reading** or **Connect wallet** connects to the BRC-100 wallet and gets its identity key. Private keys never leave the wallet.
+3. `AuthFetch` performs the BRC-103 mutual-authentication handshake; the server verifies it with `@bsv/auth-express-middleware`. Routes use `req.auth.identityKey` from that verified context, never a field the client sends.
+4. Purchases, bookmarks and balances are stored against that key in SQLite ([store.ts](spike/src/store.ts), [channel-service.ts](spike/src/channel-service.ts)): `purchases`, `bookmarks`, `channels` (one row per reading balance) and `channel_payments` (one row per signed page), plus the per-page-era `intents`, `payment_proofs` and recovery tables.
+
+No email, password, card or profile is stored. A purchase row means "this identity owns page 6 of this edition of this book". Desktop and phone have different identities, so a purchase on one does not appear on the other. The owner waived same-identity cross-device resume for this POC.
+
+---
+
+## 7. Mistakes worth not repeating
+
+These cost real time or the owner's money during the POC:
+
+- **Guessing at a wallet error instead of reading the wallet's code.** Several wrong explanations (unconfirmed funds, half-made payments, an exhausted allowance) shipped changes that made things worse before the source code gave the real answer.
+- **Changing wallet-facing settings "while we're here".** Renaming manifest text caused permission re-prompts. Raising the monthly limit to 10,000 was unnecessary and was reverted. Ask before touching the manifest, permission names, labels, storage keys or server settings.
+- **Shrinking offers after a refusal** ("open a 4,930-sat balance instead"). The shortfall didn't depend on the amount, so each smaller offer failed the same way.
+- **Lowering the fee rate to 1 sat/kB** to save sats. It left funding transfers unmined and stuck every payment built on them. [Investigation](spike/evidence/phone-transaction-status-2026-11-02.md).
+- **Deciding from "not yet known" as if it were "no".** The reader treated "wallet not reconnected yet" as "no balance" and asked for a new one.
+
+**What we tried and removed:**
+
+| Tried | Why it went |
 |---|---|
-| Underpaid valid payment | `400`, no page |
-| Payment reused for another page, edition or identity | `409`, no new entitlement |
-| Already owned | Owned-page delivery, no new payment |
-| Response lost | Recover the original saved proof; never create a replacement charge |
-| Outcome uncertain | Preserve the intent/proof and reconcile; no automatic expiry or replacement |
+| Paying for the next page ahead | Hid the delay but bought pages the reader might not open |
+| Settling a balance 30 minutes after the last page, or on leaving | The owner wants approve-once; leaving now keeps the balance |
+| Falling back to a per-page purchase when a balance had closed | Paid outside the balance; new pages now always need a balance |
+| `keepalive` on page payments | Only needed for settle-on-leave |
+| A "check signing" button and an always-visible timing bar | Test-only |
+| Sending page payments straight to Railway, bypassing Vercel | Saved only 7–10 ms |
 
-Wallet acceptance and SQLite commit are separate operations. Recovery now checks the saved submission and accepts a receiver merge only for that original payment, completing the missing receipt after a local restart. A fresh browser can ask the server to recover its saved proof. Local tests simulate the receiver; real-wallet crash recovery and native concurrency remain unverified.
+**Other bugs the owner's testing found, all fixed:** a closed balance shown as usable after reload (now confirmed with the server first, with Retry); the idle timer counting from the last page instead of the return; a half-started old-style payment blocking a page; the timing capture missing background payments.
 
-**Real cost:** the first Desktop page cost **62 sats: 5 price + 57 fee**. After lowering its rate to 1 sat/kB, two more cost **6 sats each**. Those historical Desktop pages total **74 sats**, with another **244 sats** in permission costs. Browser pages 3 and 4 each cost **28 sats: 5 price + 23 fee**. The earlier 1-sat app cap cancelled the unsigned page-4 attempt; explicit approval then completed it. The new reader consent avoids that repeated failure/retry for fees within 23 sats. [Desktop reconciliation](spike/evidence/reader-cost-reconciliation-2026-10-17.md), [phone checks](spike/evidence/acceptance-check-2026-11-07.md).
+---
 
-The counter includes recorded page prices and fees once per transaction; unknown fees are marked. Confirmed fees persist server-side so another browser can recover the same total. Permission setup is excluded and identified separately. Complete cross-device accounting remains unverified. “5 sats per page” alone is not an accurate total-debit claim.
+## 8. Practical notes for working on this repo
 
-**Why the phone payments became stuck:** we lowered Desktop to 1 sat/kB to reduce page costs. That was a mistake for the working setup: we treated the processor's minimum accepted rate as suitable for reliable mining. Desktop then funded the phone with two transfers paying only 1 sat each (about 4 sats/kB for their actual size). The phone's **28-sat page debit** and **199-sat permission grant** paid around 100 sats/kB themselves, but spend those unmined funding transfers. The maintainer confirmed that the Desktop parents are holding up the Browser payments; Browser does not inherit Desktop's fee setting, it inherits the dependency on those funds.
+- **Two copies of the SDK** (client and server bundles) must only exchange bytes, never objects. Mixing them fails with errors like `script[serializedBytes] is not a function`.
+- **Returned sats must be internalized.** Change from a settled balance sits at the reader's address until the wallet is told about it (`internalizeAction`). The server keeps the details, so any device can collect it.
+- **BSV Browser can take longer than the SDK's 1-second wallet discovery.** Inside BSV Browser the reader talks to the React Native bridge directly and waits up to 20 s.
+- **`AuthFetch` hides custom response headers**, so timing must be captured underneath it.
+- **TypeScript 6 broke the scaffold's typing**; it is pinned to 5.8.3. [Package findings](spike/evidence/package-facts.md).
+- **Hosting:** Vercel serves the reader and forwards `/api` to the Express + SQLite server on Railway (EU West), so the wallet sees one address (`pagereader.vercel.app`) for all permissions. [Hosting guide](deploy/vercel-railway.md).
+- **Tests:** `cd spike && npm test` (156 tests). Builds: `npm run build` in `spike` and `app/client`.
+- **The in-app timing capture** (Start capture → read 20+ pages → Stop → Download JSON) records every page's visible time, signature time and server confirmation time.
 
-Arcade is the wallet's broadcast processor, separate from the WhatsOnChain explorer. Its `SEEN_MULTIPLE_NODES` status means the transactions were seen on the network, not mined. **Update, 7 November:** both phone debits and both funding transfers now show 701 confirmations on WhatsOnChain and `MINED` on Arcade; the mining blocker is closed without another page purchase or a manual rebroadcast by the agent. Changing the fee setting affects future transfers, not existing signed transactions. The client also checks and saves broadcast results instead of ignoring failures. [Original investigation](spike/evidence/phone-transaction-status-2026-11-02.md), [confirmation and acceptance checks](spike/evidence/acceptance-check-2026-11-07.md).
+---
 
-**Why this differs from the brief:** official BRC-105 middleware coordinates the challenge/retry instead of a hand-written payment endpoint. It still uses `createAction` and Atomic BEEF. We do not combine it with the scaffold's separate signed-proof recipe. We avoid paid prefetch so readers pay only for pages they explicitly request.
+## 9. Still open
 
-Speed remains unresolved: one paid sample took **9.01 s for paid HTTP** and **47.33 s request to frame marker**, including **1.41 s broadcast**. No paid p95 exists; the under-500-ms target needs investigation and measurements. Closing the tab starts no further purchases, but cannot undo a submitted payment. Leaving mid-chapter still needs a live check.
+- A first full run on **BSV Desktop** with reading balances.
+- A real **top-up** on a device.
+- **Server confirmation under 500 ms** on every page (p95 is 584 ms on the phone's network). Not part of the target, since the page is visible long before.
+- The 90-second demo recording.
+- Python: not attempted.
 
-The native Browser capture now contains **13 new paid turns, pages 20?32**. Median request-to-visible-frame time is **6.51 s**, with a range of **5.75?7.61 s**: the 500-ms target is missed. Phone payment work takes 1.20?1.60 s; the server's wallet acceptance call takes 1.76?2.10 s. Server auth and SQLite are small contributors. This is an incomplete cohort, not a qualifying 20-turn p95. [Measured report](spike/evidence/phone-paid-run-2026-11-07.md).
+---
 
-Page 20 recovered, but page 33 then failed with the specific wallet error **Maximum BEEF depth exceeded. Limit is 12**. The new diagnostics confirm that cause for page 33; page 20 originally saved only a general code. The wallet is reaching a payment-proof dependency limit, separate from page price and allowance. The run also contains a 30-second timeout at page 28, which later succeeded. All failures and recovery checks are retained; they are not additional accepted charges. The later bounded pilot recovered the original page-33 attempt successfully. Further paid cohorts remain paused while receiver acceptance latency is investigated. Waiting for mining would not satisfy seamless 500-ms reading.
+## Further reading
 
-**Fix active on the phone:** page 33 now completes, using eight known ancestors and reducing the payment proof sent over HTTP from 3,612 to 302 bytes. Its one 28-sat purchase brings the book total to **868 sats**. The app still retains complete proofs and the server restores and verifies them. The turn took **7.07 s**, including **2.43 s** receiver acceptance, so speed remains unmet. One successful retry does not prove sustained reading avoids the depth limit. All 105 implementation tests pass. [Pilot results](spike/evidence/phone-page33-pilot-2026-11-07.md).
+[Acceptance register and remaining work](docs/project-requirements-status.md) · [Senior review changes](docs/review-feedback-r1.md) · [Demo runbook](docs/mainnet-demo-runbook.md) · [Evidence index](spike/evidence/README.md) · [Dated checkpoint log](spike/evidence/checkpoint-log.md) (historical; its status lines describe their own dates, not today).
 
-**Latency bottleneck measured:** fresh page 34 took **6.12 s**, including **1.59 s** in the phone payment workflow and **2.10 s** in server wallet acceptance. Of acceptance time, **1.85 s** was the remote storage call and **0.24 s** was root validation. The remote call includes communication and service processing, not just a database write. Eight known ancestors reduced HTTP proof size to 301 bytes; the redundant status request is absent. The ledger totals **896 sats**, including one new 28-sat purchase. The 500-ms target remains unmet; storage-side tracing and supported wallet performance work are next. [Evidence](spike/evidence/receiver-latency-investigation-2026-11-07.md).
-
-**Page-35 latency follow-up:** the scoped overlap pilot completed one recorded 28-sat purchase, but still took **6.406 seconds**. The ledger now totals **924 sats** (165 prices + 759 fees). Receiver remote storage took 2.897 seconds; the payer workflow took 1.464 seconds and overlapped submission. The 402 HTTP leg took 1.042 seconds with only 48 ms inside the measured app handler. No speed improvement is established by this single sample. The pilot target was removed and cleanup commit `f67e794` deployed successfully on both hosts; public health/identity and all 16 previews still pass. [Evidence](spike/evidence/receiver-latency-investigation-2026-11-07.md#native-page-35-overlap-result).
-
-The subsequent documentation review found a deployment choice we have not evaluated: the server uses remote `SetupClient` storage, while the official [Setup documentation](https://github.com/bsv-blockchain/ts-stack/blob/main/packages/wallet/wallet-toolbox/docs/setup.md) supports server-local SQLite/MySQL. Local wallet storage could remove remote storage RPC overhead; it does not remove proof validation or processor posting, and is not a demonstrated 500-ms fix. The official [receiver implementation](https://github.com/bsv-blockchain/ts-stack/blob/main/packages/wallet/wallet-toolbox/src/storage/methods/internalizeActionCore.ts) posts an unmined received transaction before ownership completion. [Storage telemetry](https://github.com/bsv-blockchain/ts-stack/blob/main/packages/wallet/wallet-toolbox/docs/storage.md#interface-storageclientoptions) is available, but our coarse remote span cannot reveal the provider's internal breakdown. The next performance work must use offline/synthetic storage comparisons, retained service logs and wallet-free transport measurements before proposing another paid pilot. The owner explicitly asked to stop spending sats on unresolved performance experiments.
-
-## 3. When the wallet prompts
-
-**With reading balances (current), on BSV Browser 1.6.3:**
-
-- **Opening a balance:** one spending approval for up to 5,000 sats. The first time, the wallet also shows a grouped prompt for the `pagestream channel` signing permission ("Sign each page of an approved reading session").
-- **Pages:** no prompts. On 13 November, 20 pages were read in under 2 minutes with only the opening approvals.
-- **The signing permission came back** after about 35 minutes, apparently a time-limited grant. It also came back after the manifest's display text changed (see below).
-- **Unresolved, 13 November:** after the 17:04 balance, every new balance is refused with `insufficient funds` (code 7), "55 more satoshis are needed, for a total of 55", for any amount, while the wallet shows 5,565 sats. The wallet's own code says that total is the outputs plus the fee, so the transaction being funded pays nothing. It is almost certainly the wallet's own housekeeping (likely updating Pagereader's permission or allowance on-chain after the 5,000-sat monthly allowance was used), and it found no free coin. Not yet confirmed; the next check is giving the phone wallet a separate small coin.
-
-**Before reading balances (one approval per page, historical):**
-
-**“Approve 5,000 sats this session” is not what we observed.** On Desktop 3.1.1.0:
-
-1. Initial use showed separate protocol/spending prompts. Plain **Authorize** was one-time, so later pages prompted again.
-2. A grouped **Select App Permissions** grant saved **5,000 sats per month**, with protocol permissions. Saving it cost **5 sats on-chain**, undisclosed in the reported prompt.
-3. The next purchase had **zero prompts**. Moving to the hosted origin requested a new allowance; it was denied, with no new debit observed.
-
-The app's `walletLimitSats: 5000` feeds the permission manifest. It requests a wallet-managed allowance; it does not enforce a session budget. [Manifest](spike/src/manifest.ts), [grant evidence](spike/evidence/grant-only-run-2026-10-17.md).
-
-The reader now asks once per open reader to allow **5 sats plus up to 23 sats fee per page**. Later Next clicks use that ceiling with the same wallet identity. Reload/logout requires fresh app consent; the old 1-sat explanation flag is ignored. This removes repeated **app** confirmations within the ceiling; it does not prove one native wallet prompt or a session-scoped wallet grant.
-
-**Allowance accounting is unreliable in the tested wallet:** the hostname allowance counted 6 sats while port-labelled page payments brought actual spending to 74. The same query affects enforcement. Offline reproduction covered toolbox 2.14.5 and 2.14.9. The recorded upstream review found Desktop PR #124 fixing future labels on an integration branch, excluding old records, outside the inspected v3.1.1 release. Its release status has not been rechecked for this rewrite. [Investigation](spike/evidence/spending-originator-accounting-2026-10-17.md), [follow-up](docs/wallet-originator-follow-up.md).
-
-**BSV Browser 1.6.3:** free previews and owned-page resume pass. Page 3's 28 sats matches the native debit; its separate permission grant cost 199 sats. After a page-bound approval, page 4 also opened for 28 sats, reported as almost instant; the receiver independently shows its 5-sat output and 23-sat fee. A later capture confirms successful page-20 recovery and purchases through page 32, with an 840-sat ledger total; page 33 then hit the confirmed proof-depth limit. After the fix, the page-33 pilot succeeded and the ledger reached 868 sats. The owner reports all earlier native transactions are completed. The owner then confirmed pages 5 and 6 worked under the new app ceiling with no native wallet approvals, and Continue reading created no new purchase after the stopping check. The later book total is supplied above; wallet allowance consumption remains unverified. Desktop and phone have different identities, so same-identity resume is still open.
-
-The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176) requests suitable fees for ordinary micropayment users; submitted 2026-10-29. The maintainer subsequently recommended keeping 100 sats/kB for mining acceptance and identified low-fee Desktop funding parents as the earlier phone mining blocker. Raising Pagereader's cap does not lower wallet fees.
-
-## 4. What was awkward
-
-- **Fees and permission costs:** defaults overwhelmed the page price; saving grants also costs sats. [Costs](spike/evidence/permission-cost-review-2026-10-17.md).
-- **Monthly allowance and origin accounting:** session scope is unavailable in the observed flow; port labels undercount spending. [Investigation](spike/evidence/spending-originator-accounting-2026-10-17.md).
-- **Permission discovery:** observed localhost lookup used hostname port 80, requiring an optional metadata listener beside port 3108. [Discovery](spike/evidence/allowance-discovery-2026-10-17.md).
-- **Two payment recipes and a verification-only scaffold wallet:** easy to confuse with a complete receiver. [Comparison](docs/auth-payment-comparison.md).
-- **Long approvals and wallet stalls:** a denied request returned after about 494 s; Desktop history needed a normal restart. [Hosted attempt](spike/evidence/hosted-page7-denial-2026-10-19.md), [Desktop recovery](spike/evidence/page6-allowance-test-2026-10-17.md).
-- **Timing visibility:** `AuthFetch` filters custom response headers; timing needs capturing underneath it. Cold `verifyHmac` took 1.73 s. [Latency](spike/evidence/latency-investigation-2026-10-17.md).
-- **Tooling:** scaffold typing failed with TypeScript 6, so we pinned 5.8.3; the docs MCP was unavailable. [Package findings](spike/evidence/package-facts.md).
-- **Bundle size:** the deferred SDK chunk was about 518 kB before gzip. [Reader review](docs/reader-milestone-1.md).
-
-## Learned, unlearned and still open (10–13 November)
-
-**Learned**
-
-- **Per-page latency was never an algorithm problem.** About 6.5 s per paid page was spent in the payer's `createAction` (~1.5 s) and the server's `internalizeAction` (~2–3 s). Speeding up proof processing saved milliseconds. Taking the transaction out of the page turn (one signature per page) brought the turn to about 25 ms.
-- **The network round trip is the floor for confirmed payment.** Moving the server from Railway US West to EU West cut the round trip from 390 to 261 ms. Vercel's proxy adds only 7–10 ms (direct-to-server check on the phone), with an occasional spike. The page is visible in about 25 ms; acceptance takes about one phone round trip.
-- **Fixed-date refunds are the BSV constraint.** Lightning channels never expire because Bitcoin has relative timelocks and segwit; BSV has neither, so every held balance needs an unlock date and periodic settlement. Comparable products (Phoenix, Fountain, Nostr Wallet Connect) show one balance with an approve-once budget; none pays on-chain per action.
-- **A wallet treats anything it reads as part of the app's identity.** Renaming the app name and a permission description in the manifest (Pagestream → Pagereader) made BSV Browser re-ask for permissions. Connection then failed until the app was restarted. Internal identifiers (`pagestream channel`, storage keys, `PAGESTREAM_*` settings) must not change; ask before touching anything wallet- or backend-facing.
-- **BSV Browser's wallet can answer slower than the SDK's 1-second discovery window** ("No wallet available over any communication substrate"). Inside BSV Browser, the reader now talks to the React Native bridge directly and waits up to 20 s.
-- **Wallet errors hide their cause.** The SDK replaces unrecognised codes with "Wallet operation failed", and over the phone bridge numeric fields are dropped (only the text survives). Messages now name the step and include the wallet's own words and code.
-- **Change that comes back is only in the balance once internalized.** Returned sats sit at the reader's address until the reader tells the wallet (`internalizeAction`). The details needed are now also kept on the server, so any device can collect them.
-- **Two SDK copies (client and server) must only exchange bytes.** Mixing their objects fails with errors such as `script[serializedBytes] is not a function`.
-
-**Unlearned (tried, then reversed or removed)**
-
-| Tried | Why it was reversed |
-|---|---|
-| "Pay for one next page ahead" (read-ahead) | Only hid ~7 s of payment work and bought pages the reader might not open; superseded by per-page signatures and credit |
-| Sessions that settled 30 minutes after the last page, and on leaving | The owner wants approve-once; leaving now keeps the balance, and returning restarts the idle window |
-| Falling back to the per-page purchase when a session had just closed | It asked the wallet to pay for a page outside the session; new pages now require a balance |
-| Renaming the wallet manifest text | Caused permission re-prompts; visible app text only, from now on |
-| Raising the manifest's monthly limit to 10,000 | Unnecessary change; reverted to 5,000 at the owner's request |
-| "Fit to wallet": offering ever-smaller balances after a refusal | The wallet's shortfall didn't depend on the amount, so every smaller offer failed the same way; removed |
-| `keepalive` on page payments | Only needed for settle-on-leave; may send requests outside the warm connection |
-| A free "check session signing" button and an always-visible capture bar | Test-only; removed |
-| Sending payments straight to Railway, bypassing Vercel | Measured gain of 7–10 ms; not worth changing the route |
-
-**Bugs found by the owner's testing, now fixed:** a closed balance shown as usable after reload (now checked with the server first, with Retry); the idle timer counting from the last page rather than the return; a half-started old-style payment blocking a page (now superseded if it never produced a transaction); the timing capture missing background payments and their receipts.
-
-**Still open:** the BSV Browser refusal above; first BSV Desktop run with reading balances; a native top-up; confirming "payment accepted" under 500 ms on the phone's network; the 90-second demo.
-
-## 5. Python (optional)
-
-Not attempted.
-
-## Further detail
-
-[C1–C11 acceptance and remaining work](docs/project-requirements-status.md) · [current hosting](deploy/vercel-railway.md) · [demo runbook](docs/mainnet-demo-runbook.md) · [evidence index](spike/evidence/README.md).
-
-The [previous note and dated checkpoints](spike/evidence/checkpoint-log.md) are preserved unchanged as historical evidence. Its original relative links are relative to the repository root; its old status statements do not describe today's state.
-### Zero-payment receiver benchmark, 2026-11-08
-
-The official server-local Wallet/StorageKnex path was exercised with synthetic BRC-29 payments, file SQLite, controlled proof/processor services and network calls blocked. All 84 fresh synthetic acceptances, four idempotent retries and four processor-failure refusals passed. WAL/FULL had a 649-ms warm receiver median and 3,095-ms sample p95 on this Windows machine; substantial SQL write-time variation prevents treating local storage as a proven latency fix. A 16-request public hosting comparison also did not show a consistently large median proxy gain. Retained Railway logs for page 35 corroborate 56-ms challenge and 3,107-ms paid handler requests, but cannot split the remote provider's 2,896.538-ms acceptance call. Zero real sats spent; production dependencies, keys, records and routing unchanged. Details, limitations, reproducible scripts and next trace fields: [receiver benchmark](spike/evidence/receiver-benchmark-2026-11-08.md). The 500-ms requirement remains open.
-
-### Completion work, 2026-11-08
-
-Fixed logout during delayed wallet acquisition and blocked competing reader operations while a payment/history operation is outstanding. Authenticated results arriving after logout cannot reconnect the gateway or overwrite cost reconciliation. Two separate SDK-authenticated clients with the same synthetic identity recover the same bookmark and exact receipt fees across backend/SQLite restart, without payment-capable calls. All 123 tests, server/client builds and client lint pass. Emulated portrait/landscape free reading loads no wallet bundle.
-
-The official server-wallet experiment confirms combined `createAction` signing with `noSend` can reduce creation/signing calls from two to one, while returning a complete proof and supporting unsent action discovery/cancellation in that implementation. Its single 755.6-ms sample is not a native latency fix; lost-proof reconstruction and native support still need verification. The production payment recipe is unchanged. Native spending-session support, 500-ms delivery, actual same-identity device resume and the final mainnet demo remain open. [Completion checkpoint and remaining dependencies](spike/evidence/completion-checkpoint-2026-11-08.md).
-
-**Subsequent owner scope revision:** shared-identity Desktop/phone resume is waived for this POC, rather than marked implemented. BRC-208 recommends keeping an account on one active device to avoid conflicting local wallet state; no blanket regulatory prohibition was verified. Keep the existing device identities, costs and bookmarks separate. The owner reports session approval/uninterrupted reading is set and requests confirmation next; exact native scope and post-fix continuity still need evidence. [Policy review and no-spend verification](spike/evidence/identity-policy-and-session-review-2026-11-08.md).
+Earlier research worth knowing about: [receiver benchmark with local wallet storage](spike/evidence/receiver-benchmark-2026-11-08.md), [completion checkpoint](spike/evidence/completion-checkpoint-2026-11-08.md), [identity policy review](spike/evidence/identity-policy-and-session-review-2026-11-08.md), [Desktop cost reconciliation](spike/evidence/reader-cost-reconciliation-2026-10-17.md), [phone acceptance checks](spike/evidence/acceptance-check-2026-11-07.md), [7 November phone run](spike/evidence/phone-paid-run-2026-11-07.md).
