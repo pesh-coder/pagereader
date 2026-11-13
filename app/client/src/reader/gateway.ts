@@ -80,11 +80,11 @@ export interface ReaderGateway {
   savedPage(book: Book): number | null
   reconcileCosts(): Promise<{ matched: number; missing: number }>
   preparationStatus?(book: Book, page: number): Promise<'clear' | 'owned' | 'existing'>
-  sessionStatus?(book: Book): SessionStatus | null
+  sessionStatus?(): SessionStatus | null
   sessionsEnabled?(): boolean
   sessionMaxSats?(): number | null
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
-  endSession?(book: Book): Promise<SessionStatus | null>
+  endSession?(): Promise<SessionStatus | null>
   leaveSession?(): void
 }
 export interface SessionStatus {
@@ -181,12 +181,12 @@ export function createReaderGateway(
     }
     return session
   }
-  const tidySession = (selectedEdition: string) => {
-    const client = session, record = client?.load(selectedEdition)
+  const tidySession = () => {
+    const client = session, record = client?.load()
     if (!client || !record || openedHere.has(record.channelId)) return
-    const settle = record.state === 'open' ? client.close(selectedEdition) : Promise.resolve(record)
+    const settle = record.state === 'open' ? client.close() : Promise.resolve(record)
     if (['open', 'funded', 'closing', 'settled'].includes(record.state))
-      void settle.then(() => client.receiveChange(selectedEdition)).then(changed, () => undefined)
+      void settle.then(() => client.receiveChange()).then(changed, () => undefined)
   }
   const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
     const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
@@ -194,13 +194,14 @@ export function createReaderGateway(
     const accept = (body: SessionPage) => {
       if (wallet !== selectedWallet || sessionRevision !== revision) return
       const existing = loadSpends().get(body.purchase.txid)
-      saveSpend({ ...existing, ...body.purchase, identityKey, edition: selectedEdition, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
-      if (me && edition === selectedEdition)
+      // The accepted page may be an earlier one from another book in this session.
+      saveSpend({ ...existing, ...body.purchase, identityKey, edition: body.editionId, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
+      if (me && edition === body.editionId)
         me.purchases = [...me.purchases.filter(p => p.page !== body.purchase.page), body.purchase]
       try { observer?.paid?.(body.purchase.txid) } catch { /* Diagnostics cannot interrupt payments. */ }
     }
     await client.idle()
-    const record = client.load(selectedEdition)!
+    const record = client.load()!
     const credited = record.pending ? undefined : client.takeCredit(selectedEdition, page)
     sessionError = undefined
     if (credited && record.terms) {
@@ -360,7 +361,7 @@ export function createReaderGateway(
     }
     if (edition) {
       await refreshMe()
-      tidySession(edition)
+      tidySession()
     }
   }
   const paidResponse = async (
@@ -518,8 +519,9 @@ export function createReaderGateway(
     },
     sessionsEnabled: () => Boolean(wallet && me?.sessionsEnabled),
     sessionMaxSats: () => (Number.isSafeInteger(me?.sessionMaxSats) ? me!.sessionMaxSats! : null),
-    sessionStatus(book) {
-      const record = book.editionId && wallet ? session?.load(book.editionId) : undefined
+    sessionStatus() {
+      // One session per wallet: the same status shows in every book.
+      const record = wallet ? session?.load() : undefined
       if (!record?.terms || record.identityKey !== wallet?.identityKey || record.state === 'abandoned') return null
       return {
         state: record.state, capacity: record.terms.capacity, paidSats: record.paid, pages: record.paid / record.terms.price,
@@ -549,20 +551,20 @@ export function createReaderGateway(
         changed()
       }
     },
-    async endSession(book) {
-      if (!book.editionId || !session) return null
+    async endSession() {
+      if (!session) return null
       const client = session
       await client.idle()
-      await client.close(book.editionId)
-      await client.receiveChange(book.editionId)
+      await client.close()
+      await client.receiveChange()
       changed()
-      return gateway.sessionStatus!(book)
+      return gateway.sessionStatus!()
     },
     leaveSession() {
       // Leaving stops spending: settle what was signed, by beacon, without waiting.
-      const record = edition ? session?.load(edition) : undefined
+      const record = session?.load()
       if (record?.state === 'open' && navigator.sendBeacon)
-        void session!.close(edition, url => navigator.sendBeacon(url))
+        void session!.close(url => navigator.sendBeacon(url))
     },
     async preparationStatus(book, page) {
       allowSpend = false
@@ -611,9 +613,16 @@ export function createReaderGateway(
       checkedStatus = undefined
       lastHttp = undefined
       lastWalletFailure = undefined
-      const sessionRecord = !recoveryOnly && wallet ? session?.load(edition) : undefined
-      if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId) &&
-        !me?.purchases.some(p => p.page === page) && !wallet!.getAttempt(edition, page)) {
+      const sessionRecord = !recoveryOnly && wallet ? session?.load() : undefined
+      if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId)) {
+        // After switching books, load that book's purchases before deciding to pay.
+        if (!me) {
+          try { await acquire() }
+          catch (error) { throw error instanceof ReaderError ? error : new ReaderError('Your purchases could not load. Try again.', 'retry') }
+        }
+      }
+      if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId) && me &&
+        !me.purchases.some(p => p.page === page) && !wallet!.getAttempt(edition, page)) {
         try { return await sessionPage(book, page) }
         catch (error) {
           throw error instanceof ReaderError ? error
@@ -843,6 +852,6 @@ export function createReaderGateway(
     preparationStatus: (book, page) => exclusive(() => gateway.preparationStatus!(book, page)),
     page: (...args) => exclusive(() => gateway.page(...args)),
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
-    endSession: book => exclusive(() => gateway.endSession!(book)),
+    endSession: () => exclusive(() => gateway.endSession!()),
   }
 }

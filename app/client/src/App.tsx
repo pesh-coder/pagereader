@@ -319,7 +319,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     setBusy(true)
     setSessionMessage('')
     try {
-      const ended = await gateway.endSession(book)
+      const ended = await gateway.endSession()
       setSessionMessage(ended?.state === 'received'
         ? `Session ended: ${ended.pages} ${ended.pages === 1 ? 'page' : 'pages'} paid; ${ended.remainingSats} sats returned to your wallet.`
         : 'Session ended. Your unspent sats return once the settlement is confirmed.')
@@ -335,7 +335,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     if (!book || busy || lock.current) return
     void turn(book, target, true)
   }
-  const session = book ? gateway.sessionStatus?.(book) ?? null : null
+  const session = book ? gateway.sessionStatus?.() ?? null : null
   const sessionOpen = session?.state === 'open'
   // The server may set a lower session ceiling.
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
@@ -629,8 +629,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
         </>
       )}
       {panel === 'timings' && (
-        <TimingPanel timings={timings} close={close} changed={() => invalidate(n => n + 1)} unavailable={busy ? 'Wait for the current page to finish loading.' : !book || !page || !owns(page.page) ? 'Capture is unavailable here. Close this panel, open a book and use Continue reading to display an owned page, then return here.' : ''} start={(name, version) => {
-          if (busy || !book || !page || !owns(page.page)) throw new Error('Open an owned page and wait for it to finish loading first.')
+        <TimingPanel timings={timings} close={close} changed={() => invalidate(n => n + 1)} unavailable={busy ? 'Wait for the current page to finish loading.' : !book || !page ? 'Capture is unavailable here. Close this panel and open a book page, then return here.' : !gateway.hasIdentity() ? 'Connect your wallet first (wallet menu), then return here.' : ''} start={(name, version) => {
+          // Starting a capture never pays and is independent of any reading session.
+          if (busy || !book || !page) throw new Error('Open a book page and wait for it to finish loading first.')
           timings.start(name, version, timingContext(book.editionId ?? ''), location.origin)
         }} />
       )}

@@ -18,7 +18,7 @@ export interface ChannelRow {
   id: string; identity: string; edition: string; state: ChannelState
   offer: string; terms: string | null; payout_prefix: string; payout_suffix: string
   funding_beef: string | null; paid: number; latest_sig: string | null
-  credit_page: number | null; forfeits: number; last_activity: number
+  credit_page: number | null; credit_edition: string | null; forfeits: number; last_activity: number
   settlement_txid: string | null; settlement_beef: string | null; funding_fee: number | null
 }
 export type Broadcast = (atomicBeef: number[], txid: string) => Promise<void>
@@ -47,6 +47,14 @@ export function createChannelService(options: {
       settlement_txid TEXT, settlement_beef TEXT, funding_fee INTEGER);
     CREATE TABLE IF NOT EXISTS channel_payments(channel TEXT NOT NULL REFERENCES channels(id), paid INTEGER NOT NULL,
       page INTEGER NOT NULL, PRIMARY KEY(channel, paid));`)
+  // A session pays for pages in any book: payments and credit record their book.
+  // Additive migration; earlier rows keep the book the session was opened from.
+  const columns = (table: string) => new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name))
+  if (!columns('channels').has('credit_edition')) db.exec('ALTER TABLE channels ADD COLUMN credit_edition TEXT')
+  if (!columns('channel_payments').has('edition')) {
+    db.exec('ALTER TABLE channel_payments ADD COLUMN edition TEXT')
+    db.exec('UPDATE channel_payments SET edition=(SELECT edition FROM channels WHERE channels.id=channel_payments.channel)')
+  }
   const row = (id: string) => (ID.test(id) ? db.prepare('SELECT * FROM channels WHERE id=?').get(id) : undefined) as ChannelRow | undefined
   const termsOf = (channel: ChannelRow) => {
     if (!channel.terms) throw new ChannelError(409, 'Reading session is not funded')
@@ -70,8 +78,9 @@ export function createChannelService(options: {
       const capacity = requested ?? ceiling
       if (!Number.isSafeInteger(capacity) || capacity < config.channel.minCapacitySats || capacity > ceiling)
         throw new ChannelError(400, `Session amount must be ${config.channel.minCapacitySats}–${ceiling} sats`)
-      const open = db.prepare("SELECT id FROM channels WHERE identity=? AND edition=? AND state IN ('funded','open')").get(identity, edition)
-      if (open) throw new ChannelError(409, 'A reading session is already open for this book')
+      // One session per wallet identity, covering every book.
+      const open = db.prepare("SELECT id FROM channels WHERE identity=? AND state IN ('funded','open')").get(identity)
+      if (open) throw new ChannelError(409, 'A reading session is already open for this wallet')
       const id = Utils.toHex(Random(16))
       const serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey
       const serverKey = (await wallet.getPublicKey({ protocolID: CHANNEL_PROTOCOL, keyID: id, counterparty: identity, forSelf: true })).publicKey
@@ -131,22 +140,24 @@ export function createChannelService(options: {
       await options.broadcast(Utils.toArray(channel.funding_beef!, 'base64'), terms.fundingTxid)
       const credit = Number.isSafeInteger(firstPage) && firstPage! > config.freePages && firstPage! <= pages &&
         !store.owned(identity, channel.edition, firstPage!) && !blockingIntent(identity, channel.edition, firstPage!) ? firstPage! : null
-      db.prepare("UPDATE channels SET state='open', credit_page=?, last_activity=? WHERE id=? AND state='funded'").run(credit, now(), id)
+      db.prepare("UPDATE channels SET state='open', credit_page=?, credit_edition=?, last_activity=? WHERE id=? AND state='funded'")
+        .run(credit, credit === null ? null : channel.edition, now(), id)
       return { state: 'open' as const, paid: 0, credit }
     },
 
     /** O(1) per page: rebuild the next state, verify one signature, record ownership. */
     pay(id: string, edition: string, page: number, paid: number, signatureBase64: string) {
       const channel = row(id)
-      if (!channel || channel.edition !== edition) throw new ChannelError(404, 'Reading session not found')
+      if (!channel) throw new ChannelError(404, 'Reading session not found')
       if (channel.state !== 'open') throw new ChannelError(409, 'Reading session is closed', 'SESSION_CLOSED')
       const terms = termsOf(channel), pages = options.pages(edition) ?? 0
       if (!Number.isSafeInteger(page) || page <= config.freePages || page > pages) throw new ChannelError(404, 'Page not found')
-      const priorPage = db.prepare('SELECT page FROM channel_payments WHERE channel=? AND paid=?').get(id, paid) as { page: number } | undefined
+      const priorPage = db.prepare('SELECT page, edition FROM channel_payments WHERE channel=? AND paid=?').get(id, paid) as { page: number; edition: string } | undefined
       if (paid === channel.paid && signatureBase64 === channel.latest_sig && priorPage) {
         // Lost response: replay the accepted state for the page it bought, never another.
-        if (priorPage.page !== page) throw new ChannelError(409, 'This payment already bought another page')
-        return { channel, terms, purchase: store.owned(channel.identity, edition, page)!, credit: channel.credit_page, replay: true }
+        if (priorPage.page !== page || priorPage.edition !== edition) throw new ChannelError(409, 'This payment already bought another page')
+        return { channel, terms, purchase: store.owned(channel.identity, edition, page)!,
+          credit: channel.credit_edition === edition ? channel.credit_page : null, replay: true }
       }
       if (paid !== channel.paid + terms.price) throw new ChannelError(409, `Expected the next session payment after ${channel.paid} sats`)
       if (paid > maxPaid(terms)) throw new ChannelError(402, 'Reading session spent; open a new session')
@@ -158,13 +169,14 @@ export function createChannelService(options: {
         if (current.state !== 'open' || current.paid !== channel.paid) throw new ChannelError(409, 'Reading session changed')
         if (store.owned(channel.identity, edition, page)) throw new ChannelError(409, 'Page already owned')
         if (blockingIntent(channel.identity, edition, page)) throw new ChannelError(409, 'An earlier payment attempt for this page needs checking first')
-        const forfeits = current.forfeits + (current.credit_page !== null && current.credit_page !== page ? 1 : 0)
+        const forfeits = current.forfeits +
+          (current.credit_page !== null && (current.credit_page !== page || current.credit_edition !== edition) ? 1 : 0)
         const next = page + 1
         const credit = forfeits <= config.channel.maxForfeitedCredits && next <= pages && paid + terms.price <= maxPaid(terms) &&
           !store.owned(channel.identity, edition, next) && !blockingIntent(channel.identity, edition, next) ? next : null
-        db.prepare('UPDATE channels SET paid=?, latest_sig=?, credit_page=?, forfeits=?, last_activity=? WHERE id=?')
-          .run(paid, signatureBase64, credit, forfeits, now(), id)
-        db.prepare('INSERT INTO channel_payments VALUES(?,?,?)').run(id, paid, page)
+        db.prepare('UPDATE channels SET paid=?, latest_sig=?, credit_page=?, credit_edition=?, forfeits=?, last_activity=? WHERE id=?')
+          .run(paid, signatureBase64, credit, credit === null ? null : edition, forfeits, now(), id)
+        db.prepare('INSERT INTO channel_payments(channel, paid, page, edition) VALUES(?,?,?,?)').run(id, paid, page, edition)
         const txid = pageTxid(id, paid, terms.price)
         db.prepare('INSERT INTO purchases VALUES(?,?,?,?,?)').run(channel.identity, edition, page, txid, terms.price)
         // The session's two miner fees (funding + settlement) are recorded once,

@@ -8,7 +8,7 @@ import { Store } from '../src/store.js'
 import { createProbe } from '../src/probe.js'
 import { loadCatalogue } from '../src/content.js'
 import { config } from '../src/config.js'
-import type { ChannelService } from '../src/channel-service.js'
+import { createChannelService, type ChannelService } from '../src/channel-service.js'
 import { createSessionClient } from '../../app/client/src/payments/channel-session.js'
 import { readerWallet } from './fixtures/session-wallet.js'
 import { settlementValid, type ChannelTerms } from '../src/payment-channel.js'
@@ -72,8 +72,8 @@ test('a reading session pays each page with one signature, delivers the next on 
   assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => [p.page, p.sats, p.feeSats]),
     [[3, 5, 25 + config.channel.settlementFeeSats], [4, 5, 0], [5, 5, 0], [6, 5, 0]])
   assert.ok(h.posts.every(post => post.path === '/api/channel-pages'))
-  await h.session.close(h.edition.id)
-  const done = await h.session.receiveChange(h.edition.id)
+  await h.session.close()
+  const done = await h.session.receiveChange()
   assert.equal(done?.state, 'received')
   // The server received its 20 sats as one BRC-29 payment inside one settlement.
   assert.equal(h.received.length, 1)
@@ -103,18 +103,68 @@ test('the page requested at approval arrives with the session, so it shows as so
   assert.equal(other.session.takeCredit(other.edition.id, 2), undefined)
 })
 
+test('one session per wallet pays for pages in several books and settles once', async t => {
+  const h = await harness(t)
+  const other = loadCatalogue()[1].edition
+  const record = await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 3)
+  await h.session.pay(other.id, 3)
+  const body = await h.session.pay(h.edition.id, 4)
+  assert.deepEqual(body.paragraphs, h.edition.pages[3])
+  assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => p.page), [3, 4])
+  assert.deepEqual(h.store.purchases(h.reader.identity, other.id).map(p => p.page), [3])
+  // A second session cannot open while this one is open, from any book.
+  await assert.rejects(h.session.open(other.id, 160), /already open/)
+  const payments = h.store.db.prepare('SELECT paid, page, edition FROM channel_payments WHERE channel=? ORDER BY paid').all(record.channelId)
+  assert.deepEqual(payments.map(p => [p.paid, p.page, p.edition]), [[5, 3, h.edition.id], [10, 3, other.id], [15, 4, h.edition.id]])
+  await h.session.close()
+  await h.session.receiveChange()
+  assert.equal(h.received.length, 1, 'one settlement for both books')
+  assert.deepEqual(Transaction.fromAtomicBEEF(h.received[0].tx).outputs.map(o => o.satoshis), [15, 100 - config.channel.settlementFeeSats - 15])
+})
+
+test('a payment for one book cannot be replayed to buy a page in another book', async t => {
+  const h = await harness(t)
+  const other = loadCatalogue()[1].edition
+  const record = await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 3)
+  const latest = h.channels.row(record.channelId)!.latest_sig!
+  const replay = await fetch(h.origin + '/api/channel-pages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channelId: record.channelId, editionId: other.id, page: 3, paid: 5, signature: latest }) })
+  assert.equal(replay.status, 409)
+  assert.deepEqual(h.store.purchases(h.reader.identity, other.id), [])
+})
+
+test('sessions created before multi-book support keep their history after migration', () => {
+  const store = new Store(':memory:')
+  store.db.exec(`CREATE TABLE channels(id TEXT PRIMARY KEY, identity TEXT NOT NULL, edition TEXT NOT NULL,
+      state TEXT NOT NULL, offer TEXT NOT NULL, terms TEXT, payout_prefix TEXT NOT NULL, payout_suffix TEXT NOT NULL,
+      funding_beef TEXT, paid INTEGER NOT NULL DEFAULT 0, latest_sig TEXT, credit_page INTEGER,
+      forfeits INTEGER NOT NULL DEFAULT 0, last_activity INTEGER NOT NULL, created_at INTEGER NOT NULL,
+      settlement_txid TEXT, settlement_beef TEXT, funding_fee INTEGER);
+    CREATE TABLE channel_payments(channel TEXT NOT NULL REFERENCES channels(id), paid INTEGER NOT NULL,
+      page INTEGER NOT NULL, PRIMARY KEY(channel, paid));
+    INSERT INTO channels VALUES('${'a'.repeat(32)}','id','old-book','settled','{}',NULL,'p','s',NULL,40,NULL,45,0,1,1,'t',NULL,42);
+    INSERT INTO channel_payments VALUES('${'a'.repeat(32)}',40,44);`)
+  createChannelService({ store, wallet: new ProtoWallet(PrivateKey.fromRandom()) as unknown as WalletInterface,
+    broadcast: async () => {}, pages: () => 10, enabled: () => true })
+  assert.deepEqual(store.db.prepare('SELECT paid, page, edition FROM channel_payments').all().map(r => ({ ...r })), [{ paid: 40, page: 44, edition: 'old-book' }])
+  assert.equal((store.db.prepare('SELECT credit_edition FROM channels').get() as { credit_edition: unknown }).credit_edition, null)
+  store.close()
+})
+
 test('lost responses are resent as the same state and never charge twice', async t => {
   const h = await harness(t)
   await h.session.open(h.edition.id, 160)
-  const record = h.session.load(h.edition.id)!
+  const record = h.session.load()!
   // Simulate a payment that reached the server but whose response was lost.
   const { signChannel, stateTransaction } = await import('../src/payment-channel.js')
   const signature = Utils.toBase64(await signChannel(h.reader.wallet, record.terms!, stateTransaction(record.terms!, 5), record.serverIdentity))
-  h.storage.set(`pagestream-session-v1:${h.reader.identity}:${h.edition.id}`, JSON.stringify({ ...record, pending: { paid: 5, page: 3, signature } }))
+  h.storage.set(`pagestream-session-v2:${h.reader.identity}`, JSON.stringify({ ...record, pending: { paid: 5, edition: h.edition.id, page: 3, signature } }))
   h.channels.pay(record.channelId, h.edition.id, 3, 5, signature)
   const body = await h.session.pay(h.edition.id, 3)
   assert.equal(body.page, 3)
-  assert.equal(h.session.load(h.edition.id)!.paid, 5)
+  assert.equal(h.session.load()!.paid, 5)
   assert.equal(h.store.purchases(h.reader.identity, h.edition.id).length, 1)
   assert.equal(h.channels.row(record.channelId)!.paid, 5)
 })
@@ -122,7 +172,7 @@ test('lost responses are resent as the same state and never charge twice', async
 test('the receiver refuses forged, skipped, replayed-for-another-page and post-close payments', async t => {
   const h = await harness(t)
   await h.session.open(h.edition.id, 160)
-  const record = h.session.load(h.edition.id)!
+  const record = h.session.load()!
   const { signChannel, stateTransaction } = await import('../src/payment-channel.js')
   const sign = async (paid: number) => Utils.toBase64(await signChannel(h.reader.wallet, record.terms!, stateTransaction(record.terms!, paid), record.serverIdentity))
   const post = (body: object) => fetch(h.origin + '/api/channel-pages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -159,8 +209,8 @@ test('closing an unused session returns everything but the fee, and idle session
   let clock = Date.now()
   const h = await harness(t, true, () => clock)
   await h.session.open(h.edition.id, 160)
-  await h.session.close(h.edition.id)
-  await h.session.receiveChange(h.edition.id)
+  await h.session.close()
+  await h.session.receiveChange()
   assert.equal(h.received.length, 0, 'no server payout without a paid page')
   assert.equal(h.broadcasts.length, 2, 'funding, then the zero-payment settlement')
   assert.equal((h.reader.internalized[0] as { outputs: { outputIndex: number }[] }).outputs[0].outputIndex, 0)
@@ -173,7 +223,7 @@ test('closing an unused session returns everything but the fee, and idle session
   assert.equal(h.channels.row(second.channelId)!.state, 'settled')
   assert.equal(h.received.length, 1, 'the idle session paid 5 sats and settled once')
   // The reader receives its change later from the settled status, without closing.
-  assert.equal((await h.session.receiveChange(h.edition.id))?.state, 'open', 'an open local record is not touched')
+  assert.equal((await h.session.receiveChange())?.state, 'open', 'an open local record is not touched')
 })
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {

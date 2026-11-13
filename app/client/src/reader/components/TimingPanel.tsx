@@ -11,7 +11,7 @@ export function TimingPanel({ timings, start, close, unavailable, changed }: {
   const [exported, setExported] = useState('')
   const [, refresh] = useState(0)
   return <Panel title="Reading timings" close={close}>
-    <p>Capture page turns you choose. Starting or exporting cannot buy a page. Open an owned page before starting.</p>
+    <p>Capture page turns you choose. Starting, stopping or exporting never buys a page and does not open or end a reading session. Connect your wallet and open any book page before starting.</p>
     <p className="subtle">The export includes public identity, transaction IDs and timings, never keys or payment proofs. Closing or reloading stops capture; incomplete turns are retained.</p>
     {unavailable && <p role="status">{unavailable}</p>}
     <p role="status">{message}</p>

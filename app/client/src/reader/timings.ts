@@ -61,7 +61,7 @@ export class ReadingTimings {
     if (!['BSV Desktop', 'BSV Browser'].includes(name) || !version.trim() || version.length > 40)
       throw new Error('Enter the native wallet app and its installed version.')
     if (!context.identityKey || context.network !== 'mainnet' || !context.edition)
-      throw new Error('Connect the wallet and open an owned book page first. Starting capture cannot connect or pay.')
+      throw new Error('Connect the wallet and open a book page first. Starting capture cannot connect or pay.')
     if (this.run?.recording) throw new Error('Stop the current capture before starting another.')
     this.current = undefined
     this.run = { schema: 2, runId: crypto.randomUUID(), origin, walletName: name, walletVersion: version.trim(),

@@ -13,6 +13,7 @@ export type SessionWallet = Pick<WalletInterface,
   'getPublicKey' | 'createSignature' | 'createAction' | 'signAction' | 'abortAction' | 'internalizeAction'>
 export interface SessionRecord {
   identityKey: string
+  /** Book the session was opened from; a session pays for pages in any book. */
   edition: string
   channelId: string
   serverIdentity: string
@@ -26,7 +27,7 @@ export interface SessionRecord {
   /** Last cumulative payment the server accepted. */
   paid: number
   /** Signed but unconfirmed next state. Always resent before signing another. */
-  pending?: { paid: number; page: number; signature: string }
+  pending?: { paid: number; edition: string; page: number; signature: string }
   settlementTxid?: string
   openedAt: number
 }
@@ -52,17 +53,18 @@ export class SessionError extends Error {
 }
 
 const MAX_FUNDING_FEE_SATS = 60
-const keyFor = (identity: string, edition: string) => `pagestream-session-v1:${identity}:${edition}`
+// One reading session per wallet identity, across every book.
+const keyFor = (identity: string) => `pagestream-session-v2:${identity}`
 export const sessionPurchaseTxid = (record: SessionRecord, paid: number) =>
   `channel:${record.channelId}:${paid / record.terms!.price}`
 
 export function createSessionClient(deps: SessionDeps) {
   const { wallet, identityKey } = deps
-  const load = (edition: string): SessionRecord | undefined => {
-    const raw = deps.storage.getItem(keyFor(identityKey, edition))
+  const load = (): SessionRecord | undefined => {
+    const raw = deps.storage.getItem(keyFor(identityKey))
     return raw ? JSON.parse(raw) : undefined
   }
-  const save = (record: SessionRecord) => deps.storage.setItem(keyFor(record.identityKey, record.edition), JSON.stringify(record))
+  const save = (record: SessionRecord) => deps.storage.setItem(keyFor(record.identityKey), JSON.stringify(record))
   const api = (edition: string, path: string) => `/api/editions/${encodeURIComponent(edition)}/${path}`
   let credit: SessionPage['credit'] | undefined
   // Serializes page payments, including one started in the background.
@@ -76,7 +78,7 @@ export function createSessionClient(deps: SessionDeps) {
   const client = {
     load,
     remaining(record: SessionRecord) { return record.terms ? maxPaid(record.terms) - record.paid : 0 },
-    isOpen(edition: string) { return load(edition)?.state === 'open' },
+    isOpen() { return load()?.state === 'open' },
 
     /**
      * One wallet approval for a total `budget`, miner fees included: the session
@@ -87,11 +89,11 @@ export function createSessionClient(deps: SessionDeps) {
     async open(edition: string, budget: number = config.channel.capacitySats, firstPage?: number) {
       const capacity = budget - MAX_FUNDING_FEE_SATS
       if (!Number.isSafeInteger(capacity) || capacity <= 0) throw new SessionError('The session amount is too small to cover its fees.', false)
-      const existing = load(edition)
+      const existing = load()
       // An interrupted open never reached the server's refund step: cancel it.
       if (existing?.state === 'funding') await abandon(existing)
       else if (existing && ['funded', 'open', 'closing'].includes(existing.state))
-        throw new SessionError('A reading session for this book is already open or closing.', false)
+        throw new SessionError('A reading session is already open or closing.', false)
       const offer = await deps.authJson<{
         channelId: string; serverIdentity: string; serverKey: string; readerKey: string; capacity: number; price: number
         settlementFee: number; refundLockTime: number; serverScript: string
@@ -182,21 +184,21 @@ export function createSessionClient(deps: SessionDeps) {
     /** Sign the next cumulative state for `page`; resends an unconfirmed state first. */
     pay(edition: string, page: number, onAccepted?: (page: SessionPage, record: SessionRecord) => void) {
       const run = async (): Promise<SessionPage> => {
-        let record = load(edition)
+        let record = load()
         if (record?.state !== 'open' || !record.terms) throw new SessionError('No open reading session.', false)
-        if (record.pending && record.pending.page !== page) {
-          // Finish the earlier signed page first; it may already be accepted.
+        if (record.pending && (record.pending.page !== page || record.pending.edition !== edition)) {
+          // Finish the earlier signed page first (any book); it may already be accepted.
           const earlier = await send(record, record.pending)
-          onAccepted?.(earlier, load(edition)!)
-          record = load(edition)!
+          onAccepted?.(earlier, load()!)
+          record = load()!
         }
         const paid = record.pending?.paid ?? record.paid + record.terms!.price
         if (paid > maxPaid(record.terms!)) throw new SessionError('This reading session is spent. End it to receive your change, then open another.', false)
-        const pending = record.pending ?? { paid, page, signature: Utils.toBase64(
+        const pending = record.pending ?? { paid, edition, page, signature: Utils.toBase64(
           await signChannel(wallet, record.terms!, stateTransaction(record.terms!, paid), record.serverIdentity)) }
         save({ ...record, pending })
         const body = await send(record, pending)
-        onAccepted?.(body, load(edition)!)
+        onAccepted?.(body, load()!)
         return body
       }
       const result = tail.then(run, run)
@@ -205,24 +207,24 @@ export function createSessionClient(deps: SessionDeps) {
     },
 
     /** Stop paying: the server settles the latest signed state. Safe to repeat. */
-    async close(edition: string, beacon?: (url: string) => boolean) {
-      const record = load(edition)
+    async close(beacon?: (url: string) => boolean) {
+      const record = load()
       if (!record || !['open', 'funded', 'closing'].includes(record.state)) return record
       credit = undefined
       const url = `/api/channels/${record.channelId}/close`
       save({ ...record, state: 'closing' })
-      if (beacon) { beacon(url); return load(edition) }
+      if (beacon) { beacon(url); return load() }
       const response = await deps.post(url, {})
       if (!response.ok) throw new SessionError('The session could not be settled yet. It settles automatically after 10 minutes.', true)
-      return load(edition)
+      return load()
     },
 
     /** Receive the change output of a settled session into the reader's wallet. */
-    async receiveChange(edition: string) {
-      const record = load(edition)
+    async receiveChange() {
+      const record = load()
       if (!record?.terms || !['funded', 'closing', 'settled'].includes(record.state)) return record
       const status = await deps.authJson<{ state: string; paid: number; settlementTxid?: string; settlementBeef?: string }>(
-        api(edition, `channels/${record.channelId}`), 'GET')
+        api(record.edition, `channels/${record.channelId}`), 'GET')
       if (status.state !== 'settled' || !status.settlementBeef) return record
       const settlement = Transaction.fromAtomicBEEF(Utils.toArray(status.settlementBeef, 'base64'))
       const allowed = [record.paid, record.pending?.paid].filter((value): value is number => value !== undefined)
@@ -249,7 +251,7 @@ export function createSessionClient(deps: SessionDeps) {
     let response: Response
     try {
       response = await deps.post('/api/channel-pages', {
-        channelId: record.channelId, editionId: record.edition, page: pending.page, paid: pending.paid, signature: pending.signature,
+        channelId: record.channelId, editionId: pending.edition, page: pending.page, paid: pending.paid, signature: pending.signature,
       })
     } catch {
       throw new SessionError('The page payment did not reach the server. It is kept and will be resent; no second payment is made.', true)
@@ -258,21 +260,21 @@ export function createSessionClient(deps: SessionDeps) {
     if (body.code === 'SESSION_CLOSED') {
       // Settled by the server (idle or closed elsewhere); change is received next.
       credit = undefined
-      save({ ...load(record.edition)!, state: 'closing', pending: undefined })
+      save({ ...load()!, state: 'closing', pending: undefined })
       throw new SessionError('Your reading session has ended, so this page was not paid. Your unspent sats are being returned.', false)
     }
     if (!response.ok) {
       // A definitive refusal never consumed this state; the same amount is reused.
       if (response.status === 400 || response.status === 402 || response.status === 409)
-        save({ ...load(record.edition)!, pending: undefined })
+        save({ ...load()!, pending: undefined })
       throw new SessionError(body.error ?? 'The page payment was refused.', response.status >= 500)
     }
-    if (body.page !== pending.page || body.editionId !== record.edition || body.channel?.paid !== pending.paid ||
+    if (body.page !== pending.page || body.editionId !== pending.edition || body.channel?.paid !== pending.paid ||
       body.purchase?.page !== pending.page || !Array.isArray(body.paragraphs))
       throw new SessionError('Server returned a different page. Your current text is kept.', false)
-    const current = load(record.edition)!
+    const current = load()!
     save({ ...current, paid: pending.paid, pending: undefined })
-    credit = body.credit?.editionId === record.edition && body.credit.page === pending.page + 1 &&
+    credit = body.credit?.editionId === pending.edition && body.credit.page === pending.page + 1 &&
       Array.isArray(body.credit.paragraphs) ? body.credit : undefined
     return body
   }

@@ -47,7 +47,7 @@ test('the reader gateway opens a session, shows the credited next page at once a
       if (releasePayments) await new Promise<void>(resolve => { const release = releasePayments!; releasePayments = () => { release(); resolve() } })
       return fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     },
-    getAttempt: () => undefined,
+    getAttempt: () => undefined, confirmPayment: () => {},
     retainPaymentAncestors: () => {},
     paymentFee: () => null,
   } as unknown as Awaited<ReturnType<Open>>))
@@ -56,7 +56,7 @@ test('the reader gateway opens a session, shows the credited next page at once a
   await gateway.connect(book)
   assert.equal(gateway.sessionsEnabled!(), true)
   await gateway.openSession!(book, 160)
-  assert.equal(gateway.sessionStatus!(book)?.state, 'open')
+  assert.equal(gateway.sessionStatus!()?.state, 'open')
   const third = await gateway.page(book, 3)
   await gateway.bookmark(book, 3, Date.now()) // as the reader does after display
   assert.deepEqual(third.paragraphs, edition.pages[2])
@@ -76,10 +76,23 @@ test('the reader gateway opens a session, shows the credited next page at once a
   assert.equal((store.bookmark(reader.identity, edition.id) as { page: number }).page, 4, 'the credited page bookmarks once paid')
   // Exactly one wallet action set opened the session; pages used signatures only.
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith'])
-  const ended = await gateway.endSession!(book)
+  // Switch books: the same session pays, with no new approval or wallet action.
+  const other = catalogue[1].edition
+  const second: Book = { id: 'second', gid: 2, title: other.title, author: other.author, mode: 'reader', editionId: other.id, pages: other.pages.length, sourceUrl: '' }
+  assert.equal(gateway.sessionStatus!()?.state, 'open', 'the session shows in every book')
+  const otherPage = await gateway.page(second, 3)
+  assert.deepEqual(otherPage.paragraphs, other.pages[2])
+  assert.deepEqual(store.purchases(reader.identity, other.id).map(p => p.page), [3])
+  // Back in the first book, an owned page opens without paying again.
+  const owned = await gateway.page(book, 4)
+  assert.deepEqual(owned.paragraphs, edition.pages[3])
+  assert.deepEqual(store.purchases(reader.identity, edition.id).map(p => p.page).sort(), [3, 4])
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith'])
+  const ended = await gateway.endSession!()
   assert.equal(ended?.state, 'received')
-  assert.equal(ended?.remainingSats, 100 - config.channel.settlementFeeSats - 10)
-  // Receipts: 10 page sats plus the session's two miner fees, once.
+  assert.equal(ended?.pages, 3, 'one session paid pages in two books')
+  assert.equal(ended?.remainingSats, 100 - config.channel.settlementFeeSats - 15)
+  // Receipts: first book 10 page sats plus the session's two miner fees, once.
   const spending = summarizeSpending(gateway.receipts())
   assert.equal(spending.total, 10 + 25 + config.channel.settlementFeeSats)
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
