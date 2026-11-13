@@ -14,6 +14,7 @@ import { reconcileUnsignedPreparation } from './unsigned-preparation.js'
 import { recoveryHistoryFingerprint, readActionCosts, verifyIncomingOnlyHistory } from './wallet-history.js'
 import { PaymentDelivery, type DeliveryOutcome } from './payment-delivery.js'
 import type { SessionWallet } from './channel-session.js'
+import { releaseUnsentPreparations } from './release-preparations.js'
 
 export interface WalletCall {
   method: string
@@ -338,6 +339,8 @@ export async function openWallet(callbacks: {
     // Reading sessions: timed wallet calls, and a plain timed same-origin POST
     // for page payments, which are authenticated by their channel signature.
     sessionWallet: paymentWallet as unknown as SessionWallet,
+    // Free coins the wallet still reserves for this app's unsent page payments.
+    releaseUnsentPreparations: () => releaseUnsentPreparations({ identityKey, wallet: paymentWallet, storage: localStorage, originator: location.host }),
     // No keepalive: it can route requests off the page's warm connection, and
     // leaving no longer needs a request to finish after the page closes.
     sessionPost: (path: string, body: unknown) => instrumentedFetch(location.origin + path, {

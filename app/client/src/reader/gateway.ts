@@ -416,6 +416,12 @@ export function createReaderGateway(
       await refreshMe()
       await tidySession()
       collectChange()
+      // Background, never blocking the reader: release coins an unfinished
+      // earlier page payment left reserved in the wallet.
+      const release = wallet?.releaseUnsentPreparations
+      if (release) void release().then(count => {
+        if (count) { sessionNotice = `Released ${count} unfinished earlier ${count === 1 ? 'payment' : 'payments'}; their reserved sats are free in your wallet again.`; changed() }
+      }, () => undefined)
     }
   }
   const paidResponse = async (
