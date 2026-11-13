@@ -156,4 +156,8 @@ test('leaving keeps the session: a reload within 30 minutes continues with no ap
   for (let i = 0; i < 50 && !reader.calls.includes('internalizeAction'); i++) await new Promise(r => setTimeout(r, 10))
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
   assert.equal(third.sessionStatus!()?.state, 'received')
+  // With no open session, a new page asks for one and never uses another payment method.
+  await assert.rejects(third.page(book, 5), (error: { needsSession?: boolean }) => error.needsSession === true)
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
+  assert.equal(store.intent(reader.identity, edition.id, 5), undefined, 'no per-page payment request was started')
 })

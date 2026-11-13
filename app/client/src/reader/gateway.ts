@@ -55,6 +55,8 @@ export class ReaderError extends Error {
   readonly action: 'connect' | 'retry' | 'check'
   details?: string[]
   feeApproval?: PageFeeApproval
+  /** A new page needs a reading session; the reader shows the session offer. */
+  needsSession?: boolean
   constructor(message: string, action: 'connect' | 'retry' | 'check') {
     super(message)
     this.action = action
@@ -627,12 +629,17 @@ export function createReaderGateway(
           catch (error) { throw error instanceof ReaderError ? error : new ReaderError('Your purchases could not load. Try again.', 'retry') }
         }
       }
+      const unsignedAttempt = !['preparing', 'prepared', 'signing', 'signed'].includes(wallet?.getAttempt(edition, page)?.state ?? '')
       if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId) && me &&
-        !me.purchases.some(p => p.page === page) && !wallet!.getAttempt(edition, page)) {
+        !me.purchases.some(p => p.page === page) && unsignedAttempt) {
         try { return await sessionPage(book, page) }
         catch (error) {
-          throw error instanceof ReaderError ? error
-            : new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
+          if (error instanceof ReaderError) throw error
+          // The server settled the session (idle or ended elsewhere): nothing was
+          // charged for this page; offer a new session instead of another method.
+          if (session?.load()?.state !== 'open')
+            throw Object.assign(new ReaderError('Your reading session has ended, so this page was not charged. Approve a new session to keep reading.', 'retry'), { needsSession: true })
+          throw new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
         } finally { changed() }
       }
       try {
@@ -719,6 +726,10 @@ export function createReaderGateway(
               throw new Error(
                 'New purchases are paused while recovery tests finish. Already owned pages remain available.',
               )
+            // New pages are bought only through a reading session. The per-page
+            // flow above remains for checking and recovering earlier attempts.
+            if (!feeApproval)
+              throw Object.assign(new ReaderError('Approve a reading session to open new pages.', 'retry'), { needsSession: true })
             const requestId = retryable
               ? attempt!.requestId
               : crypto.randomUUID()
@@ -811,7 +822,9 @@ export function createReaderGateway(
           )
             saveSpend({ ...spend, state: 'unresolved' })
         if (error instanceof ReaderError) {
-          throw reported(error.message, error.action)
+          const result = reported(error.message, error.action)
+          if (error.needsSession) result.needsSession = true
+          throw result
         }
         console.warn('Page request failed', error)
         if (attempt?.state === 'aborted')

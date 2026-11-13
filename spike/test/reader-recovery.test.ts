@@ -191,15 +191,6 @@ function fixture(t: TestContext) {
   };
 }
 
-test("confirmed cancellation reuses the original server reservation and never substitutes a request ID", async (t) => {
-  const f = fixture(t);
-  await f.gateway.library();
-  f.setAttempt("aborted");
-  assert.equal((await f.gateway.page(book, 3)).purchase?.txid, purchase.txid);
-  assert.deepEqual(f.ids, [requestId]);
-  assert.equal(f.counts().creates, 1);
-});
-
 test("uncertain attempt and mismatched reservation cannot create replacement payments", async (t) => {
   const f = fixture(t);
   await f.gateway.library();
@@ -227,48 +218,6 @@ test("Check payment after cancellation offers an explicit retry without starting
   assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
 });
 
-test("known cancelled fee quote offers a page-bound approval; invalid bindings cannot spend", async (t) => {
-  const f = fixture(t);
-  await f.gateway.library();
-  f.setAttempt("aborted");
-  f.rejectedFee(23);
-  let approval: NonNullable<ReaderError["feeApproval"]> | undefined;
-  await assert.rejects(f.gateway.page(book, 3, true), (error) => {
-    assert.ok(error instanceof ReaderError);
-    approval = error.feeApproval;
-    return true;
-  });
-  assert.deepEqual(approval, { identityKey: "reader", edition: "edition", page: 3, requestId, maxFeeSats: 23 });
-  for (const changed of [
-    { identityKey: "another" }, { edition: "another" }, { page: 4 },
-    { requestId: "another" }, { maxFeeSats: 24 }, { maxFeeSats: NaN },
-  ]) await assert.rejects(f.gateway.page(book, 3, false, { ...approval!, ...changed }), /fee quote changed/);
-  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
-  await f.gateway.page(book, 3, false, approval);
-  assert.deepEqual(f.ids, [requestId]);
-  assert.deepEqual(f.feeCaps, [23]);
-  f.setAttempt("aborted");
-  f.rejectedFee(23);
-  await f.gateway.page(book, 3);
-  assert.deepEqual(f.feeCaps, [23, undefined]);
-});
-
-test('one reader fee consent covers successive explicit turns and logout clears it before another identity', async t => {
-  const f = fixture(t);
-  await f.gateway.library();
-  f.gateway.approveReadingFees();
-  assert.equal(f.counts().creates, 0); // Approval itself does not buy or connect.
-  await f.gateway.page(book, 3);
-  await f.gateway.page(book, 4);
-  assert.deepEqual(f.feeCaps, [23, 23]);
-  assert.equal(f.counts().creates, 2);
-  f.gateway.disconnect();
-  f.changeIdentity('other-reader');
-  await f.gateway.connect(book);
-  await f.gateway.page(book, 5);
-  assert.deepEqual(f.feeCaps, [23, 23, undefined]);
-});
-
 test('reader consent cannot release an uncertain attempt or cause read-only checks to spend', async t => {
   const f = fixture(t);
   await f.gateway.library();
@@ -279,24 +228,6 @@ test('reader consent cannot release an uncertain attempt or cause read-only chec
   await assert.rejects(f.gateway.page(book, 3, true), /Payment cancelled/);
   assert.equal(f.counts().creates, 0);
   assert.deepEqual(f.feeCaps, []);
-});
-
-test('a separately approved higher quote does not raise the continuing reader ceiling', async t => {
-  const f = fixture(t);
-  await f.gateway.library();
-  f.gateway.approveReadingFees();
-  f.setAttempt('aborted');
-  f.rejectedFee(24);
-  let approval: ReaderError['feeApproval'];
-  await assert.rejects(f.gateway.page(book, 3, true), error => {
-    assert.ok(error instanceof ReaderError);
-    approval = error.feeApproval;
-    return true;
-  });
-  assert.equal(f.counts().creates, 0);
-  await f.gateway.page(book, 3, false, approval);
-  await f.gateway.page(book, 4);
-  assert.deepEqual(f.feeCaps, [24, 23]);
 });
 
 test("unknown fee or unresolved signing never offers a higher fee approval", async (t) => {
@@ -330,23 +261,6 @@ test("Check payment reports unresolved stages and saved wallet code without crea
   });
   assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
   assert.deepEqual(f.ids, []);
-});
-
-test("orphan challenge recovery checks without paying, then explicit retry uses the original request", async (t) => {
-  const f = fixture(t);
-  await f.gateway.library();
-  f.orphan();
-  await assert.rejects(f.gateway.page(book, 3, true), (error) => {
-    assert.ok(error instanceof ReaderError);
-    assert.equal(error.action, "retry");
-    assert.match(error.message, /wallet history contains only received funds/);
-    return true;
-  });
-  assert.deepEqual(f.counts(), { creates: 0, recoveries: 0 });
-  assert.deepEqual(f.ids, []);
-  await f.gateway.page(book, 3);
-  assert.deepEqual(f.ids, [requestId]);
-  assert.equal(f.counts().creates, 1);
 });
 
 test("history refusal or a changed server intent keeps an orphan blocked without paying", async (t) => {
@@ -396,27 +310,3 @@ test("logout clears active identity while preserving recovery records; failed hi
 });
 
 
-test('Check payment reconciles eligible unsigned failure without a charge; only an explicit retry pays the same request', async t => {
-  const f = fixture(t);
-  await f.gateway.library(); f.setAttempt('preparing'); f.unsignedFailure();
-  await f.gateway.connect(book);
-  assert.equal(f.gateway.needsPaymentCheck(book, 3), true);
-  await assert.rejects(f.gateway.page(book, 3, true), error => error instanceof ReaderError && error.action === 'retry' && /No payment was made by this check/.test(error.message));
-  assert.equal(f.counts().creates, 0); assert.equal(f.ids.length, 0);
-  assert.equal(f.gateway.needsPaymentCheck(book, 3), false);
-  await f.gateway.page(book, 3);
-  assert.equal(f.counts().creates, 1); assert.deepEqual(f.ids, [requestId]);
-});
-
-
-test('fresh explicit turn removes the status roundtrip; existing attempts and recovery retain it', async t => {
-  const f = fixture(t); await f.gateway.library(); await f.gateway.connect(book)
-  await f.gateway.page(book, 4)
-  assert.equal(f.statusCount(), 0)
-  f.setAttempt('preparing')
-  await assert.rejects(f.gateway.page(book, 3), error => error instanceof ReaderError && error.action === 'check')
-  assert.equal(f.statusCount(), 1)
-  await assert.rejects(f.gateway.page(book, 3, true))
-  assert.equal(f.statusCount(), 2)
-  assert.equal(f.counts().creates, 1)
-})

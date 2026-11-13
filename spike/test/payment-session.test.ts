@@ -237,6 +237,35 @@ test('even a session in constant use settles before the reader refund could unlo
   assert.ok(config.channel.maxSessionMs < config.channel.refundDelaySeconds * 1000)
 })
 
+test('an abandoned per-page attempt with no transaction does not block a session; one with a transaction does', async t => {
+  const h = await harness(t)
+  // Page 4: challenged but never submitted (the reader rejected the wallet prompt).
+  h.store.reserve(h.reader.identity, h.edition.id, 4, '11111111-1111-4111-8111-111111111111')
+  h.store.challenge(h.reader.identity, h.edition.id, 4, 'prefix-4')
+  // Page 5: a transaction was submitted, so it may have been paid.
+  h.store.reserve(h.reader.identity, h.edition.id, 5, '22222222-2222-4222-8222-222222222222')
+  h.store.challenge(h.reader.identity, h.edition.id, 5, 'prefix-5')
+  h.store.submitted(h.reader.identity, h.edition.id, 5, 'f'.repeat(64))
+  await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 4)
+  assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => p.page), [4])
+  assert.equal(h.store.intent(h.reader.identity, h.edition.id, 4)?.state, 'superseded', 'a late per-page submission is refused')
+  await assert.rejects(h.session.pay(h.edition.id, 5), /needs checking first/)
+  assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => p.page), [4])
+})
+
+test('returning to an open session restarts its 30-minute idle window', async t => {
+  let clock = Date.now()
+  const h = await harness(t, true, () => clock)
+  const record = await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 3)
+  clock += 25 * 60 * 1000
+  assert.equal((await h.session.resume())?.state, 'open', 'the reader came back after 25 minutes')
+  clock += 25 * 60 * 1000
+  assert.deepEqual(await h.channels.settleIdle(), { settled: 0, failures: [] }, '50 minutes after the last page, but 25 after returning')
+  assert.equal(h.channels.row(record.channelId)!.state, 'open')
+})
+
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {
   const h = await harness(t)
   await assert.rejects(h.session.open(h.edition.id, config.channel.capacitySats + 61), /Session amount must be/)

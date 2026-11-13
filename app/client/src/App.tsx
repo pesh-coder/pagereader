@@ -147,6 +147,16 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       }))
     } catch (failure) {
       timings.fail(timingToken)
+      if (failure instanceof ReaderError && failure.needsSession) {
+        // No open session: show the one-approval offer, not a payment error.
+        setError(failure.message)
+        setErrorAction(null)
+        setPaymentDetails([])
+        setFailedPage(null)
+        setTarget(number)
+        setPanel('purchase')
+        return
+      }
       setFeeApproval(failure instanceof ReaderError ? failure.feeApproval ?? null : null)
       setPaymentDetails(
         failure instanceof ReaderError ? failure.details ?? [] : [],

@@ -64,10 +64,13 @@ export function createChannelService(options: {
     db.exec('BEGIN IMMEDIATE')
     try { const result = fn(); db.exec('COMMIT'); return result } catch (error) { db.exec('ROLLBACK'); throw error }
   }
-  // Any unresolved per-page attempt keeps priority; never pay the same page twice.
+  // A per-page attempt that may hold a transaction keeps priority, so a page is
+  // never paid twice. One that never submitted a transaction (reserved or
+  // challenged, no txid) does not block a session and is superseded by it.
   const blockingIntent = (identity: string, edition: string, page: number) => {
     const intent = store.intent(identity, edition, page)
-    return Boolean(intent && intent.state !== 'confirmed')
+    return Boolean(intent && intent.state !== 'confirmed' &&
+      (intent.txid !== null || !['reserved', 'challenged'].includes(intent.state)))
   }
 
   const ceiling = Math.min(options.maxCapacity ?? config.channel.capacitySats, config.channel.capacitySats)
@@ -179,6 +182,9 @@ export function createChannelService(options: {
         db.prepare('INSERT INTO channel_payments(channel, paid, page, edition) VALUES(?,?,?,?)').run(id, paid, page, edition)
         const txid = pageTxid(id, paid, terms.price)
         db.prepare('INSERT INTO purchases VALUES(?,?,?,?,?)').run(channel.identity, edition, page, txid, terms.price)
+        // A later submission for the abandoned per-page attempt is refused.
+        db.prepare("UPDATE intents SET state='superseded' WHERE identity=? AND edition=? AND page=? AND txid IS NULL AND state IN ('reserved','challenged')")
+          .run(channel.identity, edition, page)
         // The session's two miner fees (funding + settlement) are recorded once,
         // on its first page, so receipts total what the reader's wallet spent.
         const sessionFees = paid === terms.price && current.funding_fee !== null ? current.funding_fee + terms.settlementFee : 0
@@ -229,7 +235,10 @@ export function createChannelService(options: {
     status(identity: string, id: string) {
       const channel = row(id)
       if (!channel || channel.identity !== identity) throw new ChannelError(404, 'Reading session not found')
-      return service.publicStatus(channel)
+      // The reader returning to an open session counts as activity, so the idle
+      // window restarts instead of settling while the reader is back.
+      if (channel.state === 'open') db.prepare("UPDATE channels SET last_activity=? WHERE id=? AND state='open'").run(now(), id)
+      return service.publicStatus(row(id)!)
     },
 
     publicStatus(channel: ChannelRow) {
