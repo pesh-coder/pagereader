@@ -103,29 +103,61 @@ export function refundTransaction(terms: ChannelTerms) {
 }
 
 /** sha256(preimage); the signer hashes once more, giving the Bitcoin sighash. */
-export function sighashInput(terms: ChannelTerms, tx: Transaction) {
+/** sha256(preimage) for the channel input at `inputIndex` (other inputs, e.g. a wallet's, may follow). */
+export function sighashInput(terms: ChannelTerms, tx: Transaction, inputIndex = 0) {
   return Hash.sha256(TransactionSignature.format({
     sourceTXID: terms.fundingTxid, sourceOutputIndex: terms.fundingVout, sourceSatoshis: terms.capacity,
-    transactionVersion: tx.version, otherInputs: [], outputs: tx.outputs, inputIndex: 0,
-    subscript: fundingScript(terms.readerKey, terms.serverKey), inputSequence: tx.inputs[0].sequence!,
+    transactionVersion: tx.version, otherInputs: [], allInputs: tx.inputs, outputs: tx.outputs, inputIndex,
+    subscript: fundingScript(terms.readerKey, terms.serverKey), inputSequence: tx.inputs[inputIndex].sequence!,
     lockTime: tx.lockTime, scope: SCOPE,
   }))
 }
 
-export async function signChannel(wallet: ChannelSigner, terms: ChannelTerms, tx: Transaction, counterparty: string) {
-  const { signature } = await wallet.createSignature({
-    data: sighashInput(terms, tx), protocolID: CHANNEL_PROTOCOL, keyID: terms.channelId, counterparty,
-  })
+export async function signChannelHash(wallet: ChannelSigner, terms: ChannelTerms, hash: number[], counterparty: string) {
+  const { signature } = await wallet.createSignature({ data: hash, protocolID: CHANNEL_PROTOCOL, keyID: terms.channelId, counterparty })
   return signature
 }
 
-export function verifyChannel(terms: ChannelTerms, tx: Transaction, key: string, der: number[]) {
+export const signChannel = (wallet: ChannelSigner, terms: ChannelTerms, tx: Transaction, counterparty: string) =>
+  signChannelHash(wallet, terms, sighashInput(terms, tx), counterparty)
+
+export function verifyChannelHash(key: string, hash: number[], der: number[]) {
   try {
     const signature = Signature.fromDER(der)
     // Miners require low-S; a high-S signature would make settlement non-standard.
     if (signature.s.toString(16, 64) > HALF_ORDER) return false
-    return PublicKey.fromString(key).verify(sighashInput(terms, tx), signature)
+    return PublicKey.fromString(key).verify(hash, signature)
   } catch { return false }
+}
+
+export const verifyChannel = (terms: ChannelTerms, tx: Transaction, key: string, der: number[]) =>
+  verifyChannelHash(key, sighashInput(terms, tx), der)
+
+/**
+ * A top-up moves a balance into a new one in one transaction: it spends the
+ * current channel output, pays the server what was already signed for, and
+ * locks the new balance; the reader's wallet adds the rest and any change.
+ * Checks that shape (bytes in, so either SDK copy can call it) and returns the
+ * channel input's position and its sighash input.
+ */
+export function checkTopUp(parent: ChannelTerms, beef: number[] | Uint8Array, expect: {
+  paid: number; payoutScript: string; balanceScript: string; balanceSats: number
+}) {
+  const tx = Transaction.fromAtomicBEEF(Array.from(beef))
+  const outpoint = (input: Transaction['inputs'][number]) => input.sourceTXID ?? input.sourceTransaction?.id('hex')
+  const inputIndex = tx.inputs.findIndex(input => outpoint(input) === parent.fundingTxid && input.sourceOutputIndex === parent.fundingVout)
+  if (inputIndex < 0 || tx.inputs.filter(input => outpoint(input) === parent.fundingTxid && input.sourceOutputIndex === parent.fundingVout).length !== 1)
+    throw new Error('Top-up does not spend the current balance exactly once')
+  const balance = tx.outputs.filter(o => o.lockingScript.toHex() === expect.balanceScript)
+  if (balance.length !== 1 || balance[0].satoshis !== expect.balanceSats) throw new Error('Top-up does not lock the agreed balance')
+  const payout = tx.outputs.filter(o => o.lockingScript.toHex() === expect.payoutScript)
+  if (expect.paid > 0 ? payout.length !== 1 || payout[0].satoshis !== expect.paid : payout.length !== 0)
+    throw new Error('Top-up does not pay for the pages already read')
+  return {
+    inputIndex, sighash: sighashInput(parent, tx, inputIndex), txid: tx.id('hex'),
+    balanceVout: tx.outputs.findIndex(o => o.lockingScript.toHex() === expect.balanceScript),
+    payoutVout: tx.outputs.findIndex(o => o.lockingScript.toHex() === expect.payoutScript),
+  }
 }
 
 // secp256k1 order / 2, as 64 lowercase hex digits for equal-length comparison.
@@ -142,13 +174,16 @@ export function channelUnlock(readerDer: number[], serverDer: number[]) {
 }
 
 /** Full script-interpreter check of a fully signed channel spend. */
-export function scriptValid(terms: ChannelTerms, tx: Transaction) {
+export function scriptValid(terms: ChannelTerms, tx: Transaction, inputIndex = 0) {
   try {
     return new Spend({
       sourceTXID: terms.fundingTxid, sourceOutputIndex: terms.fundingVout, sourceSatoshis: terms.capacity,
       lockingScript: fundingScript(terms.readerKey, terms.serverKey), transactionVersion: tx.version,
-      otherInputs: [], outputs: tx.outputs, inputIndex: 0, unlockingScript: tx.inputs[0].unlockingScript!,
-      inputSequence: tx.inputs[0].sequence!, lockTime: tx.lockTime,
+      otherInputs: tx.inputs.filter((_, index) => index !== inputIndex).map(input => ({
+        sourceTXID: input.sourceTXID ?? input.sourceTransaction!.id('hex'), sourceOutputIndex: input.sourceOutputIndex, sequence: input.sequence!,
+      })),
+      outputs: tx.outputs, inputIndex, unlockingScript: tx.inputs[inputIndex].unlockingScript!,
+      inputSequence: tx.inputs[inputIndex].sequence!, lockTime: tx.lockTime,
     }).validate()
   } catch { return false }
 }
@@ -166,7 +201,8 @@ export function settlementBeef(terms: ChannelTerms, paid: number, readerDer: num
   return { beef: tx.toAtomicBEEF(), txid: tx.id('hex') }
 }
 
-export const settlementValid = (terms: ChannelTerms, beef: number[]) => scriptValid(terms, Transaction.fromAtomicBEEF(beef))
+export const settlementValid = (terms: ChannelTerms, beef: number[], inputIndex = 0) =>
+  scriptValid(terms, Transaction.fromAtomicBEEF(beef), inputIndex)
 
 /**
  * Server-side channel ledger. O(1) time and O(1) space per accepted page:

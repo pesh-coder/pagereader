@@ -257,7 +257,7 @@ test('an abandoned per-page attempt with no transaction does not block a session
   assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => p.page), [4])
 })
 
-test('returning to an open session restarts its 30-minute idle window', async t => {
+test('returning to an open session restarts its idle window', async t => {
   let clock = Date.now()
   const h = await harness(t, true, () => clock)
   const record = await h.session.open(h.edition.id, 160)
@@ -289,6 +289,73 @@ test('the server refuses change details that do not match the change address', a
   const tampered = h.client(new Map(), (path, body) =>
     path.endsWith('/fund') ? { ...(body as object), readerSuffix: 'not-the-real-suffix' } : body)
   await assert.rejects(tampered.open(h.edition.id, 160), /Change details do not match/)
+})
+
+test('top-up: one approval moves the balance and new sats into a full new balance and pays for pages read', async t => {
+  const h = await harness(t)
+  const parent = await h.session.open(h.edition.id, 160)          // locks 100
+  for (const page of [3, 4, 5, 6]) await h.session.pay(h.edition.id, page) // 20 paid, 80 left in the balance
+  const before = h.reader.calls.length
+  const next = await h.session.topUp(260)                          // new balance locks 200
+  // One wallet approval: one createAction + signAction, then the send.
+  assert.deepEqual(h.reader.calls.slice(before), ['createAction', 'signAction', 'sendWith'])
+  // The wallet added only the difference plus the miner fee: 200 + 20 owed - 100 moved + 25 fee.
+  assert.equal(h.reader.lastFundingSats(), 200 + 20 - 100 + 25)
+  assert.equal(next.state, 'open'); assert.equal(next.paid, 0); assert.equal(next.terms!.capacity, 200)
+  // The old balance closed into the top-up; the server received the 20 sats it was owed.
+  const old = h.channels.row(parent.channelId)!
+  assert.equal(old.state, 'settled'); assert.equal(old.settlement_txid, next.terms!.fundingTxid)
+  assert.equal(h.received.length, 1)
+  const topUp = Transaction.fromAtomicBEEF(h.received[0].tx)
+  assert.deepEqual(topUp.outputs.slice(0, 2).map(o => o.satoshis), [20, 200])
+  assert.equal(settlementValid(JSON.parse(old.terms!) as ChannelTerms, h.received[0].tx, 0), true, 'both signatures unlock the old balance')
+  // Reading continues on the new balance.
+  await h.session.pay(h.edition.id, 7)
+  assert.deepEqual(h.store.purchases(h.reader.identity, h.edition.id).map(p => p.page), [3, 4, 5, 6, 7])
+  assert.equal(h.channels.row(next.channelId)!.paid, 5)
+})
+
+test('top-up the wallet refuses changes nothing: the balance reopens for reading', async t => {
+  const h = await harness(t)
+  const parent = await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 3)
+  const refuse = h.reader.wallet.createAction
+  ;(h.reader.wallet as { createAction: unknown }).createAction = async (args: { options?: { sendWith?: unknown } }) => {
+    if (!args.options?.sendWith) throw Object.assign(new Error('User denied'), { code: 'ERR_PERMISSION_DENIED' })
+    return refuse(args as never)
+  }
+  await assert.rejects(h.session.topUp(260), /User denied/)
+  assert.equal(h.channels.row(parent.channelId)!.state, 'open')
+  ;(h.reader.wallet as { createAction: unknown }).createAction = refuse
+  await h.session.pay(h.edition.id, 4)
+  assert.equal(h.channels.row(parent.channelId)!.paid, 10)
+})
+
+test('the server refuses a top-up that underpays for pages already read', async t => {
+  const h = await harness(t)
+  await h.session.open(h.edition.id, 160)
+  await h.session.pay(h.edition.id, 3)
+  const record = h.session.load()!
+  // Pretend locally that nothing was read: the transaction would pay the server 0.
+  h.storage.set(`pagestream-session-v2:${h.reader.identity}`, JSON.stringify({ ...record, paid: 0 }))
+  await assert.rejects(h.session.topUp(260), /changed on the server|does not pay/)
+  assert.equal(h.channels.row(record.channelId)!.state, 'open')
+})
+
+test('a top-up abandoned after countersigning reopens the balance after a day', async t => {
+  let clock = Date.now()
+  const h = await harness(t, true, () => clock)
+  // A phone that vanishes mid-top-up: signing fails and its cancel never arrives.
+  const vanishing = h.client(h.storage, (path, body) => { if (path.endsWith('/cancel')) throw new Error('offline'); return body })
+  const parent = await vanishing.open(h.edition.id, 160)
+  const original = h.reader.wallet.signAction
+  ;(h.reader.wallet as { signAction: unknown }).signAction = async () => { throw new Error('Phone closed') }
+  await assert.rejects(vanishing.topUp(260), /Phone closed/)
+  ;(h.reader.wallet as { signAction: unknown }).signAction = original
+  assert.equal(h.channels.row(parent.channelId)!.state, 'rolling', 'page payments wait while a top-up is in flight')
+  clock += 86400_000 + 1
+  await h.channels.settleIdle()
+  assert.equal(h.channels.row(parent.channelId)!.state, 'open', 'the sweep reopened the balance; nothing was broadcast')
 })
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {

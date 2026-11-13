@@ -294,7 +294,7 @@ export function createProbe(options: {
         req.path !== "/.well-known/auth" &&
         !/^\/api\/receiver-latency\/[a-f0-9]{64}$/.test(req.path) &&
         !/^\/api\/(?:channel-pages|channels\/[a-f0-9]{32}\/close)$/.test(req.path) &&
-        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+|channels(?:\/[a-f0-9]{32}(?:\/fund|\/activate)?)?)$/.test(
+        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+|channels(?:\/[a-f0-9]{32}(?:\/fund|\/activate|\/topup(?:\/countersign|\/cancel)?)?)?)$/.test(
           req.path,
         )
       ) {
@@ -451,6 +451,32 @@ export function createProbe(options: {
         const book = editionFor(req);
         res.json({ state: result.state, paid: result.paid,
           ...(result.credit ? { credit: { editionId: book.id, page: result.credit, paragraphs: book.pages[result.credit - 1] } } : {}) });
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    // Top up: prepare the new balance, countersign the move, or abandon it.
+    app.post(paths("channels/:channelId/topup"), async (req, res) => {
+      if (purchasesPaused()) {
+        res.status(503).json({ error: "New purchases are paused. Owned pages remain available." });
+        return;
+      }
+      try {
+        res.json(await channels.topUpOffer(identity(req), String(req.params.channelId), req.body?.capacity));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    app.post(paths("channels/:channelId/topup/countersign"), async (req, res) => {
+      try {
+        res.json(await channels.countersignTopUp(identity(req), String(req.params.channelId), req.body ?? {}));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    app.post(paths("channels/:channelId/topup/cancel"), (req, res) => {
+      try {
+        res.json(channels.cancelTopUp(identity(req), String(req.params.channelId)));
       } catch (error) {
         channelFailure(res, error);
       }

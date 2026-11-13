@@ -317,6 +317,21 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     }
     void turn(book, target)
   }
+  async function topUp() {
+    if (!book || busy || lock.current || !gateway.topUpSession) return
+    lock.current = true
+    setBusy(true)
+    setSessionMessage('')
+    try {
+      const status = await gateway.topUpSession(sessionSats)
+      setSessionMessage(status ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
+    } catch (failure) {
+      setSessionMessage(failure instanceof Error ? failure.message : 'The top-up could not finish. Nothing was taken from your wallet.')
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
   async function endSession() {
     if (!book || busy || lock.current || !gateway.endSession) return
     lock.current = true
@@ -325,10 +340,10 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     try {
       const ended = await gateway.endSession()
       setSessionMessage(ended?.state === 'received'
-        ? `Session ended: ${ended.pages} ${ended.pages === 1 ? 'page' : 'pages'} paid; ${ended.remainingSats} sats returned to your wallet.`
-        : 'Session ended. Your unspent sats return once the settlement is confirmed.')
+        ? `Withdrawn: ${ended.remainingSats} sats returned to your wallet.`
+        : 'Withdrawing: your unspent sats return to your wallet once confirmed.')
     } catch (failure) {
-      setSessionMessage(failure instanceof Error ? failure.message : 'The session could not be ended yet. It ends automatically after 10 minutes.')
+      setSessionMessage(failure instanceof Error ? failure.message : 'The balance could not be withdrawn yet. Try again in a moment.')
     } finally {
       lock.current = false
       setBusy(false)
@@ -442,11 +457,17 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
           <div className="reading-tools session-tools">
             <span role="status">
               {session.state === 'open'
-                ? `Reading session · ${session.pages} ${session.pages === 1 ? 'page' : 'pages'} · ${session.remainingSats} sats left`
-                : 'Reading session ending · returning unspent sats'}
+                ? `Reading balance · ${session.remainingSats} sats`
+                : 'Returning your reading balance to your wallet'}
             </span>
             {session.state === 'open' && (
-              <button className="quiet" disabled={busy} onClick={() => void endSession()}>End session</button>
+              <>
+                {/* Top up refills the balance to the session amount in one wallet approval. */}
+                {session.remainingSats < session.capacity - config.channel.settlementFeeSats - 4 * config.priceSats && (
+                  <button className="quiet" disabled={busy} onClick={() => void topUp()}>Top up</button>
+                )}
+                <button className="quiet" disabled={busy} onClick={() => void endSession()}>Withdraw</button>
+              </>
             )}
           </div>
         )}
@@ -759,12 +780,12 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                 {config.priceSats} sats, with no further prompts.
               </p>
               <p className="subtle">
-                Stop reading, stop paying: you pay only for pages you open. If you leave, the session
-                stays open for 30 minutes after your last page, so you can come back without approving
-                again; then it settles and your unspent sats return to your wallet. End session settles
-                at once. The session's two miner fees (opening and settling, about{' '}
-                {config.channel.settlementFeeSats} sats each) come out of the same {sessionSats} sats. If
-                Pagereader never settles, your wallet holds a refund that unlocks after 24 hours.
+                Stop reading, stop paying: you pay only for pages you open. Your reading balance stays
+                available when you leave and come back, in any book. Top it up whenever you choose (one
+                wallet approval), or withdraw it to return the unspent sats to your wallet at once. The
+                balance's miner fees (opening and returning, about {config.channel.settlementFeeSats} sats
+                each) come out of the same {sessionSats} sats. While held, these sats are not in your
+                wallet's spendable balance; your wallet keeps a refund in case Pagereader ever stops.
               </p>
               <WalletGuidance />
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>

@@ -4,7 +4,7 @@
 import { P2PKH, PublicKey, Random, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import {
-  CHANNEL_PROTOCOL, PAYMENT_PROTOCOL, fundingScript, maxPaid, refundTransaction, selfPaymentScript, settlementBeef,
+  CHANNEL_PROTOCOL, PAYMENT_PROTOCOL, checkTopUp, fundingScript, signChannelHash, verifyChannelHash, maxPaid, refundTransaction, selfPaymentScript, settlementBeef,
   signChannel, stateTransaction, validateTerms, verifyChannel, type ChannelTerms,
 } from './payment-channel.js'
 import { networkFee } from './payment-cost.js'
@@ -13,14 +13,15 @@ import type { Store } from './store.js'
 export class ChannelError extends Error {
   constructor(readonly status: number, message: string, readonly code?: 'SESSION_CLOSED') { super(message) }
 }
-export type ChannelState = 'offered' | 'funded' | 'open' | 'settling' | 'settled'
+// 'rolling': a top-up is moving this balance into a new one; no page payments.
+export type ChannelState = 'offered' | 'funded' | 'open' | 'rolling' | 'settling' | 'settled'
 export interface ChannelRow {
   id: string; identity: string; edition: string; state: ChannelState
   offer: string; terms: string | null; payout_prefix: string; payout_suffix: string
   funding_beef: string | null; paid: number; latest_sig: string | null
   credit_page: number | null; credit_edition: string | null; forfeits: number; last_activity: number
   settlement_txid: string | null; settlement_beef: string | null; funding_fee: number | null
-  reader_prefix: string | null; reader_suffix: string | null
+  reader_prefix: string | null; reader_suffix: string | null; parent: string | null
 }
 export type Broadcast = (atomicBeef: number[], txid: string) => Promise<void>
 
@@ -56,6 +57,8 @@ export function createChannelService(options: {
   // change, kept so any of the reader's devices can collect it.
   if (!columns('channels').has('reader_prefix')) db.exec('ALTER TABLE channels ADD COLUMN reader_prefix TEXT')
   if (!columns('channels').has('reader_suffix')) db.exec('ALTER TABLE channels ADD COLUMN reader_suffix TEXT')
+  // A top-up's new balance names the balance it replaces.
+  if (!columns('channels').has('parent')) db.exec('ALTER TABLE channels ADD COLUMN parent TEXT')
   if (!columns('channel_payments').has('edition')) {
     db.exec('ALTER TABLE channel_payments ADD COLUMN edition TEXT')
     db.exec('UPDATE channel_payments SET edition=(SELECT edition FROM channels WHERE channels.id=channel_payments.channel)')
@@ -79,6 +82,22 @@ export function createChannelService(options: {
   }
 
   const ceiling = Math.min(options.maxCapacity ?? config.channel.capacitySats, config.channel.capacitySats)
+  async function createOffer(identity: string, edition: string, capacity: number, parent?: string) {
+    const id = Utils.toHex(Random(16))
+    const serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey
+    const serverKey = (await wallet.getPublicKey({ protocolID: CHANNEL_PROTOCOL, keyID: id, counterparty: identity, forSelf: true })).publicKey
+    const readerKey = (await wallet.getPublicKey({ protocolID: CHANNEL_PROTOCOL, keyID: id, counterparty: identity })).publicKey
+    const prefix = Utils.toBase64(Random(16)), suffix = Utils.toBase64(Random(16))
+    const offer = {
+      channelId: id, serverIdentity, serverKey, readerKey, capacity, price: config.priceSats,
+      settlementFee: config.channel.settlementFeeSats,
+      refundLockTime: Math.floor(now() / 1000) + config.channel.refundDelaySeconds,
+      serverScript: await selfPaymentScript(wallet, prefix, suffix, identity),
+    }
+    db.prepare(`INSERT INTO channels(id,identity,edition,state,offer,payout_prefix,payout_suffix,last_activity,created_at,parent)
+      VALUES(?,?,?,'offered',?,?,?,?,?,?)`).run(id, identity, edition, JSON.stringify(offer), prefix, suffix, now(), now(), parent ?? null)
+    return offer
+  }
   const service = {
     ceiling,
     async offer(identity: string, edition: string, requested?: number) {
@@ -87,22 +106,59 @@ export function createChannelService(options: {
       if (!Number.isSafeInteger(capacity) || capacity < config.channel.minCapacitySats || capacity > ceiling)
         throw new ChannelError(400, `Session amount must be ${config.channel.minCapacitySats}–${ceiling} sats`)
       // One session per wallet identity, covering every book.
-      const open = db.prepare("SELECT id FROM channels WHERE identity=? AND state IN ('funded','open')").get(identity)
+      const open = db.prepare("SELECT id FROM channels WHERE identity=? AND state IN ('funded','open','rolling')").get(identity)
       if (open) throw new ChannelError(409, 'A reading session is already open for this wallet')
-      const id = Utils.toHex(Random(16))
-      const serverIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey
-      const serverKey = (await wallet.getPublicKey({ protocolID: CHANNEL_PROTOCOL, keyID: id, counterparty: identity, forSelf: true })).publicKey
-      const readerKey = (await wallet.getPublicKey({ protocolID: CHANNEL_PROTOCOL, keyID: id, counterparty: identity })).publicKey
-      const prefix = Utils.toBase64(Random(16)), suffix = Utils.toBase64(Random(16))
-      const offer = {
-        channelId: id, serverIdentity, serverKey, readerKey, capacity, price: config.priceSats,
-        settlementFee: config.channel.settlementFeeSats,
-        refundLockTime: Math.floor(now() / 1000) + config.channel.refundDelaySeconds,
-        serverScript: await selfPaymentScript(wallet, prefix, suffix, identity),
-      }
-      db.prepare(`INSERT INTO channels(id,identity,edition,state,offer,payout_prefix,payout_suffix,last_activity,created_at)
-        VALUES(?,?,?,'offered',?,?,?,?,?)`).run(id, identity, edition, JSON.stringify(offer), prefix, suffix, now(), now())
-      return offer
+      return createOffer(identity, edition, capacity)
+    },
+
+    /** Prepare a new balance that the current one will move into, topped up by the reader's wallet. */
+    async topUpOffer(identity: string, parentId: string, requested?: number) {
+      const parent = row(parentId)
+      if (!parent || parent.identity !== identity) throw new ChannelError(404, 'Reading session not found')
+      if (parent.state !== 'open') throw new ChannelError(409, 'Only an open reading balance can be topped up')
+      const parentTerms = termsOf(parent), capacity = requested ?? ceiling
+      if (!Number.isSafeInteger(capacity) || capacity < config.channel.minCapacitySats || capacity > ceiling)
+        throw new ChannelError(400, `Session amount must be ${config.channel.minCapacitySats}–${ceiling} sats`)
+      if (capacity <= parentTerms.capacity - parent.paid) throw new ChannelError(400, 'The balance is already at that amount')
+      const offer = await createOffer(identity, parent.edition, capacity, parent.id)
+      return { ...offer, parent: {
+        channelId: parent.id, fundingTxid: parentTerms.fundingTxid, fundingVout: parentTerms.fundingVout,
+        paid: parent.paid, payoutScript: parentTerms.serverScript, inputBeef: parent.funding_beef,
+      } }
+    },
+
+    /** Check the reader's top-up transaction and countersign the current balance it spends. */
+    async countersignTopUp(identity: string, childId: string, body: { tx?: unknown; readerSignature?: unknown }) {
+      const child = row(childId)
+      if (!child || child.identity !== identity || child.state !== 'offered' || !child.parent) throw new ChannelError(404, 'Top-up not found')
+      const parent = row(child.parent)!, offer = JSON.parse(child.offer)
+      if (parent.state !== 'open' && parent.state !== 'rolling') throw new ChannelError(409, 'The reading balance changed; start the top-up again')
+      if (typeof body.tx !== 'string' || typeof body.readerSignature !== 'string') throw new ChannelError(400, 'Malformed top-up')
+      const parentTerms = termsOf(parent)
+      let checked: ReturnType<typeof checkTopUp>
+      try {
+        checked = checkTopUp(parentTerms, Utils.toArray(body.tx, 'base64'), { paid: parent.paid, payoutScript: parentTerms.serverScript,
+          balanceScript: fundingScript(offer.readerKey, offer.serverKey).toHex(), balanceSats: offer.capacity })
+      } catch (error) { throw new ChannelError(400, error instanceof Error ? error.message : 'Malformed top-up') }
+      if (!verifyChannelHash(parentTerms.readerKey, checked.sighash, Utils.toArray(body.readerSignature, 'base64')))
+        throw new ChannelError(400, 'Invalid top-up signature')
+      // Freeze page payments on the current balance: what it paid is now fixed.
+      db.prepare("UPDATE channels SET state='rolling', last_activity=? WHERE id=? AND state IN ('open','rolling')").run(now(), parent.id)
+      db.prepare('UPDATE channels SET offer=? WHERE id=?').run(JSON.stringify({ ...offer, rollPaid: parent.paid }), child.id)
+      const serverSignature = await signChannelHash(wallet, parentTerms, checked.sighash, identity)
+      return { serverSignature: Utils.toBase64(serverSignature) }
+    },
+
+    /** Abandon an unfinished top-up (nothing was broadcast): the current balance reopens. */
+    cancelTopUp(identity: string, childId: string) {
+      const child = row(childId)
+      if (!child || child.identity !== identity || !child.parent) throw new ChannelError(404, 'Top-up not found')
+      if (child.state !== 'offered') throw new ChannelError(409, 'The top-up already went ahead')
+      transaction(() => {
+        db.prepare("UPDATE channels SET state='settled' WHERE id=? AND state='offered'").run(child.id)
+        db.prepare("UPDATE channels SET state='open', last_activity=? WHERE id=? AND state='rolling'").run(now(), child.parent)
+      })
+      return { state: 'open' as const }
     },
 
     /** Verify the unsent funding, then sign the reader's refund before anything is broadcast. */
@@ -118,6 +174,14 @@ export function createChannelService(options: {
       const script = fundingScript(offer.readerKey, offer.serverKey).toHex()
       const vout = funding.outputs.findIndex(output => output.lockingScript.toHex() === script)
       if (vout < 0 || funding.outputs[vout].satoshis !== offer.capacity) throw new ChannelError(400, 'Funding does not lock the agreed session amount')
+      if (channel.parent) {
+        const parent = row(channel.parent)!, parentTerms = termsOf(parent)
+        if (parent.state !== 'rolling' || offer.rollPaid !== parent.paid) throw new ChannelError(409, 'The top-up was not countersigned')
+        try {
+          checkTopUp(parentTerms, Utils.toArray(body.fundingBeef, 'base64'), { paid: parent.paid, payoutScript: parentTerms.serverScript,
+            balanceScript: script, balanceSats: offer.capacity })
+        } catch (error) { throw new ChannelError(400, error instanceof Error ? error.message : 'Malformed top-up') }
+      }
       const terms = validateTerms({
         channelId: id, fundingTxid: funding.id('hex'), fundingVout: vout, capacity: offer.capacity,
         readerKey: offer.readerKey, serverKey: offer.serverKey, readerScript: body.readerScript, serverScript: offer.serverScript,
@@ -154,7 +218,21 @@ export function createChannelService(options: {
       if (channel.state === 'open') return { state: 'open' as const, paid: channel.paid, credit: null }
       if (channel.state !== 'funded') throw new ChannelError(409, 'Reading session is not awaiting activation')
       const terms = termsOf(channel), pages = options.pages(channel.edition) ?? 0
-      await options.broadcast(Utils.toArray(channel.funding_beef!, 'base64'), terms.fundingTxid)
+      const parent = channel.parent ? row(channel.parent) : undefined
+      if (parent && parent.paid > 0) {
+        // Receive what the old balance owed as a BRC-29 payment; this also broadcasts.
+        const parentTerms = termsOf(parent), beef = Utils.toArray(channel.funding_beef!, 'base64')
+        const { payoutVout } = checkTopUp(parentTerms, beef, { paid: parent.paid, payoutScript: parentTerms.serverScript,
+          balanceScript: fundingScript(terms.readerKey, terms.serverKey).toHex(), balanceSats: terms.capacity })
+        await wallet.internalizeAction({
+          tx: beef, description: 'Pagereader reading session', labels: ['pagestream channel'],
+          outputs: [{ outputIndex: payoutVout, protocol: 'wallet payment', paymentRemittance: {
+            derivationPrefix: parent.payout_prefix, derivationSuffix: parent.payout_suffix, senderIdentityKey: identity,
+          } }],
+        })
+      } else await options.broadcast(Utils.toArray(channel.funding_beef!, 'base64'), terms.fundingTxid)
+      if (parent) db.prepare("UPDATE channels SET state='settled', settlement_txid=?, settlement_beef=? WHERE id=? AND state='rolling'")
+        .run(terms.fundingTxid, channel.funding_beef, parent.id)
       const credit = Number.isSafeInteger(firstPage) && firstPage! > config.freePages && firstPage! <= pages &&
         !store.owned(identity, channel.edition, firstPage!) && !blockingIntent(identity, channel.edition, firstPage!) ? firstPage! : null
       db.prepare("UPDATE channels SET state='open', credit_page=?, credit_edition=?, last_activity=? WHERE id=? AND state='funded'")
@@ -166,6 +244,7 @@ export function createChannelService(options: {
     pay(id: string, edition: string, page: number, paid: number, signatureBase64: string) {
       const channel = row(id)
       if (!channel) throw new ChannelError(404, 'Reading session not found')
+      if (channel.state === 'rolling') throw new ChannelError(409, 'A top-up is in progress; try again in a moment')
       if (channel.state !== 'open') throw new ChannelError(409, 'Reading session is closed', 'SESSION_CLOSED')
       const terms = termsOf(channel), pages = options.pages(edition) ?? 0
       if (!Number.isSafeInteger(page) || page <= config.freePages || page > pages) throw new ChannelError(404, 'Page not found')
@@ -242,6 +321,9 @@ export function createChannelService(options: {
       const due = db.prepare(`SELECT id FROM channels WHERE (state IN ('funded','open') AND (last_activity<=? OR created_at<=?))
         OR state='settling'`).all(cutoff, oldest) as { id: string }[]
       const failures: string[] = []
+      // A top-up abandoned before its funding reached the server: reopen the balance.
+      const stale = db.prepare(`SELECT id FROM channels WHERE state='offered' AND parent IS NOT NULL AND created_at<=?`).all(now() - 86400_000) as { id: string }[]
+      for (const { id } of stale) { const child = row(id)!; try { service.cancelTopUp(child.identity, id) } catch { /* already moved on */ } }
       for (const { id } of due) await service.settle(id).catch(() => failures.push(id))
       return { settled: due.length - failures.length, failures }
     },

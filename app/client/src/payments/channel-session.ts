@@ -5,8 +5,8 @@ import { Random, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import { networkFee } from './payment-cost.js'
 import {
-  channelKeys, fundingScript, maxPaid, refundTransaction, selfPaymentScript, signChannel, stateTransaction,
-  validateTerms, verifyChannel, type ChannelTerms,
+  channelKeys, channelUnlock, checkTopUp, fundingScript, maxPaid, refundTransaction, selfPaymentScript, signChannel,
+  signChannelHash, stateTransaction, validateTerms, verifyChannel, verifyChannelHash, type ChannelTerms,
 } from './payment-channel.js'
 
 export type SessionWallet = Pick<WalletInterface,
@@ -30,6 +30,12 @@ export interface SessionRecord {
   pending?: { paid: number; edition: string; page: number; signature: string }
   settlementTxid?: string
   openedAt: number
+  /** A top-up whose new balance is funded on the server but not yet sent/activated. */
+  topUp?: { childId: string; stage: 'funded' | 'sent'; next: SessionRecord }
+}
+type Offer = {
+  channelId: string; serverIdentity: string; serverKey: string; readerKey: string; capacity: number; price: number
+  settlementFee: number; refundLockTime: number; serverScript: string
 }
 export interface SessionPage {
   editionId: string
@@ -93,6 +99,38 @@ export function createSessionClient(deps: SessionDeps) {
   // Serializes page payments, including one started in the background.
   let tail: Promise<unknown> = Promise.resolve()
 
+  async function checkOffer(offer: Offer, capacity: number) {
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    if (offer.capacity !== capacity || offer.price !== config.priceSats || offer.settlementFee !== config.channel.settlementFeeSats ||
+      offer.refundLockTime < nowSeconds + 3600 || offer.refundLockTime > nowSeconds + config.channel.refundDelaySeconds + 86400 ||
+      !/^76a914[0-9a-f]{40}88ac$/.test(offer.serverScript))
+      throw new SessionError('The server offered different session terms. Nothing was paid.', false)
+    // Both channel keys must come from BRC-42 derivation with the server identity.
+    const keys = await channelKeys(wallet, offer.channelId, offer.serverIdentity)
+    if (keys.own !== offer.readerKey || keys.counterparty !== offer.serverKey)
+      throw new SessionError('Session keys did not match your wallet. Nothing was paid.', false)
+  }
+
+  // Release the funded new balance and switch to it. Repeatable after a reload.
+  async function finishTopUp(record: SessionRecord) {
+    const step = record.topUp!
+    if (step.stage === 'funded') {
+      const sent = await wallet.createAction({
+        description: 'Send Pagereader balance top-up', options: { sendWith: [step.next.terms!.fundingTxid], acceptDelayedBroadcast: false },
+      })
+      const status = sent.sendWithResults?.find(result => result.txid === step.next.terms!.fundingTxid)?.status
+      if (status !== 'unproven' && status !== 'sending')
+        throw new SessionError(`Wallet broadcast status: ${status ?? 'unknown'}. The top-up will be retried when you reopen the reader.`, true)
+      save({ ...record, topUp: { ...step, stage: 'sent' } })
+    }
+    await deps.authJson(api(record.edition, `channels/${step.childId}/activate`), 'POST', {})
+    // The old balance is closed into the new one; it has no separate change to collect.
+    markCollected(record.channelId)
+    credit = undefined
+    save(step.next)
+    return step.next
+  }
+
   async function abandon(record: SessionRecord) {
     if (record.reference) await wallet.abortAction({ reference: record.reference }).catch(() => undefined)
     save({ ...record, state: 'abandoned', pending: undefined })
@@ -117,19 +155,8 @@ export function createSessionClient(deps: SessionDeps) {
       if (existing?.state === 'funding') await abandon(existing)
       else if (existing && ['funded', 'open', 'closing'].includes(existing.state))
         throw new SessionError('A reading session is already open or closing.', false)
-      const offer = await deps.authJson<{
-        channelId: string; serverIdentity: string; serverKey: string; readerKey: string; capacity: number; price: number
-        settlementFee: number; refundLockTime: number; serverScript: string
-      }>(api(edition, 'channels'), 'POST', { capacity })
-      const nowSeconds = Math.floor(Date.now() / 1000)
-      if (offer.capacity !== capacity || offer.price !== config.priceSats || offer.settlementFee !== config.channel.settlementFeeSats ||
-        offer.refundLockTime < nowSeconds + 3600 || offer.refundLockTime > nowSeconds + 3 * 86400 ||
-        !/^76a914[0-9a-f]{40}88ac$/.test(offer.serverScript))
-        throw new SessionError('The server offered different session terms. Nothing was paid.', false)
-      // Both channel keys must come from BRC-42 derivation with the server identity.
-      const keys = await channelKeys(wallet, offer.channelId, offer.serverIdentity)
-      if (keys.own !== offer.readerKey || keys.counterparty !== offer.serverKey)
-        throw new SessionError('Session keys did not match your wallet. Nothing was paid.', false)
+      const offer = await deps.authJson<Offer>(api(edition, 'channels'), 'POST', { capacity })
+      await checkOffer(offer, capacity)
       const readerPrefix = Utils.toBase64(Random(16)), readerSuffix = Utils.toBase64(Random(16))
       let record: SessionRecord = {
         identityKey, edition, channelId: offer.channelId, serverIdentity: offer.serverIdentity, state: 'funding',
@@ -194,6 +221,87 @@ export function createSessionClient(deps: SessionDeps) {
       return record
     },
 
+    /**
+     * Top up: one wallet approval moves the current balance plus new sats from
+     * the wallet into a new balance of `budget` (fees included), paying for the
+     * pages already read in the same transaction. Nothing is sent until the
+     * server has signed the reader's refund for the new balance.
+     */
+    topUp(budget: number = config.channel.capacitySats) {
+      const run = async (): Promise<SessionRecord> => {
+        const record = load()
+        if (record?.topUp) return finishTopUp(record)
+        if (record?.state !== 'open' || !record.terms) throw new SessionError('There is no open reading balance to top up.', false)
+        if (record.pending) throw new SessionError('A page payment is still being confirmed. Try the top-up again in a moment.', true)
+        const parent = record.terms, capacity = budget - MAX_FUNDING_FEE_SATS
+        const offer = await deps.authJson<Offer & { parent: { channelId: string; fundingTxid: string; fundingVout: number; paid: number; payoutScript: string; inputBeef: string } }>(
+          api(record.edition, `channels/${record.channelId}/topup`), 'POST', { capacity })
+        await checkOffer(offer, capacity)
+        if (offer.parent.channelId !== record.channelId || offer.parent.paid !== record.paid ||
+          offer.parent.fundingTxid !== parent.fundingTxid || offer.parent.fundingVout !== parent.fundingVout || offer.parent.payoutScript !== parent.serverScript)
+          throw new SessionError('Your balance changed on the server. Nothing was paid; try again.', true)
+        const readerPrefix = Utils.toBase64(Random(16)), readerSuffix = Utils.toBase64(Random(16))
+        const readerScript = await selfPaymentScript(wallet, readerPrefix, readerSuffix, offer.serverIdentity)
+        const balanceScript = fundingScript(offer.readerKey, offer.serverKey).toHex()
+        const expect = { paid: record.paid, payoutScript: parent.serverScript, balanceScript, balanceSats: capacity }
+        const cancel = async (reference?: string) => {
+          if (reference) await wallet.abortAction({ reference }).catch(() => undefined)
+          await deps.authJson(api(record.edition, `channels/${offer.channelId}/topup/cancel`), 'POST', {}).catch(() => undefined)
+        }
+        let created
+        try {
+          created = await wallet.createAction({
+            description: 'Top up Pagereader reading balance', labels: ['pagestream channel'],
+            inputBEEF: Utils.toArray(offer.parent.inputBeef, 'base64'),
+            inputs: [{ outpoint: `${parent.fundingTxid}.${parent.fundingVout}`, unlockingScriptLength: 146, inputDescription: 'Pagereader reading balance' }],
+            outputs: [
+              ...(record.paid > 0 ? [{ lockingScript: parent.serverScript, satoshis: record.paid, outputDescription: 'Pages read' }] : []),
+              { lockingScript: balanceScript, satoshis: capacity, outputDescription: 'Pagereader reading balance' },
+            ],
+            options: { signAndProcess: false, noSend: true, randomizeOutputs: false, returnTXIDOnly: false },
+          })
+        } catch (error) { await cancel(); throw error }
+        const signable = created.signableTransaction
+        if (!signable) { await cancel(); throw new SessionError('The wallet did not prepare the top-up. Nothing was sent.', true) }
+        let next: SessionRecord, fee: number
+        try {
+          const template = checkTopUp(parent, signable.tx, expect)
+          fee = networkFee(Transaction.fromAtomicBEEF(signable.tx)) ?? -1
+          if (fee < 0 || fee > MAX_FUNDING_FEE_SATS) throw new SessionError(`Top-up miner fee ${fee < 0 ? 'unknown' : fee} exceeds ${MAX_FUNDING_FEE_SATS} sats. Nothing was sent.`, false)
+          const readerSignature = await signChannelHash(wallet, parent, template.sighash, record.serverIdentity)
+          const { serverSignature } = await deps.authJson<{ serverSignature: string }>(api(record.edition, `channels/${offer.channelId}/topup/countersign`), 'POST',
+            { tx: Utils.toBase64(signable.tx), readerSignature: Utils.toBase64(readerSignature) })
+          const server = Utils.toArray(serverSignature, 'base64')
+          if (!verifyChannelHash(parent.serverKey, template.sighash, server)) throw new SessionError('The server signature was invalid. Nothing was sent.', false)
+          const signed = await wallet.signAction({ reference: signable.reference,
+            spends: { [template.inputIndex]: { unlockingScript: channelUnlock(readerSignature, server).toHex() } },
+            options: { noSend: true, returnTXIDOnly: false } })
+          if (!signed.tx) throw new SessionError('The wallet returned no signed top-up. Nothing was sent.', false)
+          const final = checkTopUp(parent, signed.tx, expect)
+          const terms = validateTerms({
+            channelId: offer.channelId, fundingTxid: final.txid, fundingVout: final.balanceVout, capacity,
+            readerKey: offer.readerKey, serverKey: offer.serverKey, readerScript, serverScript: offer.serverScript,
+            price: offer.price, settlementFee: offer.settlementFee, refundLockTime: offer.refundLockTime,
+          })
+          const zero = await signChannel(wallet, terms, stateTransaction(terms, 0), offer.serverIdentity)
+          const funded = await deps.authJson<{ terms: ChannelTerms; refundSignature: string }>(api(record.edition, `channels/${offer.channelId}/fund`), 'POST',
+            { fundingBeef: Utils.toBase64(signed.tx), readerScript, signature: Utils.toBase64(zero), readerPrefix, readerSuffix })
+          if (JSON.stringify(funded.terms) !== JSON.stringify(terms) ||
+            !verifyChannel(terms, refundTransaction(terms), terms.serverKey, Utils.toArray(funded.refundSignature, 'base64')))
+            throw new SessionError('The server refund guarantee was invalid. Nothing was sent.', false)
+          next = { identityKey, edition: record.edition, channelId: offer.channelId, serverIdentity: offer.serverIdentity, state: 'open',
+            terms, fundingFeeSats: fee, readerPrefix, readerSuffix, refundSignature: funded.refundSignature, paid: 0, openedAt: Date.now() }
+        } catch (error) { await cancel(signable.reference); throw error }
+        // The refund for the new balance is held: from here the top-up only goes forward.
+        const progressing = { ...record, topUp: { childId: offer.channelId, stage: 'funded' as const, next } }
+        save(progressing)
+        return finishTopUp(progressing)
+      }
+      const result = tail.then(run, run)
+      tail = result.catch(() => undefined)
+      return result
+    },
+
     /** A page already delivered on credit, if it is the one requested. */
     takeCredit(edition: string, page: number) {
       if (credit?.editionId !== edition || credit.page !== page) return undefined
@@ -208,6 +316,7 @@ export function createSessionClient(deps: SessionDeps) {
     pay(edition: string, page: number, onAccepted?: (page: SessionPage, record: SessionRecord) => void) {
       const run = async (): Promise<SessionPage> => {
         let record = load()
+        if (record?.topUp) record = await finishTopUp(record)
         if (record?.state !== 'open' || !record.terms) throw new SessionError('No open reading session.', false)
         if (record.pending && (record.pending.page !== page || record.pending.edition !== edition)) {
           // Finish the earlier signed page first (any book); it may already be accepted.
@@ -252,6 +361,8 @@ export function createSessionClient(deps: SessionDeps) {
      * so its change can be received.
      */
     async resume() {
+      const pendingTopUp = load()
+      if (pendingTopUp?.topUp) await finishTopUp(pendingTopUp).catch(() => undefined)
       const record = load()
       if (record?.state !== 'open' || !record.terms) return record
       const status = await deps.authJson<{ state: string; paid: number }>(api(record.edition, `channels/${record.channelId}`), 'GET')

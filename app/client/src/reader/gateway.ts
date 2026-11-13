@@ -88,6 +88,7 @@ export interface ReaderGateway {
   sessionMaxSats?(): number | null
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(): Promise<SessionStatus | null>
+  topUpSession?(budget: number): Promise<SessionStatus | null>
 }
 export interface SessionStatus {
   state: SessionRecord['state']
@@ -573,6 +574,19 @@ export function createReaderGateway(
         changed()
       }
     },
+    async topUpSession(budget) {
+      if (!session) return null
+      sessionError = undefined
+      try {
+        await session.topUp(budget)
+      } catch (error) {
+        throw error instanceof ReaderError ? error
+          : new ReaderError(error instanceof Error ? error.message : 'The top-up could not finish. Nothing was taken from your wallet.', 'check')
+      } finally {
+        changed()
+      }
+      return gateway.sessionStatus!()
+    },
     async endSession() {
       if (!session) return null
       const client = session
@@ -883,5 +897,6 @@ export function createReaderGateway(
     page: (...args) => exclusive(() => gateway.page(...args)),
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
     endSession: () => exclusive(() => gateway.endSession!()),
+    topUpSession: budget => exclusive(() => gateway.topUpSession!(budget)),
   }
 }

@@ -37,12 +37,14 @@ export const config = {
     minCapacitySats: 60,
     // Reader-funded fee carried by the single settlement (≈265 bytes at 100 sat/kB).
     settlementFeeSats: 30,
-    refundDelaySeconds: 24 * 60 * 60,
-    // Leaving keeps the session: the reader can return without a new approval
-    // until it has been idle this long, then the server settles it.
-    idleSettleMs: 30 * 60 * 1000,
-    // Settle even an active session well before the reader's refund unlocks.
-    maxSessionMs: 20 * 60 * 60 * 1000,
+    // A reading balance lasts months: the reader's refund unlocks after 60 days
+    // and each top-up starts a new balance with a new refund.
+    refundDelaySeconds: 60 * 24 * 60 * 60,
+    // Leaving keeps the balance. After 30 days without reading, the server
+    // returns what is left to the reader's wallet.
+    idleSettleMs: 30 * 24 * 60 * 60 * 1000,
+    // Without a top-up, settle well before the reader's refund unlocks.
+    maxSessionMs: 55 * 24 * 60 * 60 * 1000,
     // Pages delivered ahead of payment that were never paid for, per session.
     maxForfeitedCredits: 2,
   },
