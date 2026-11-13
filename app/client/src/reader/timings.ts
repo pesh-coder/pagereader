@@ -1,5 +1,6 @@
 import { walletDiagnostic, type WalletDiagnostic } from '../payments/wallet-diagnostic.js'
 import type { HttpCall, Spend, WalletCall } from '../payments/wallet-client.js'
+import type { ConnectionCheck } from './connection-check.js'
 
 type Context = { identityKey: string | null; network: string | null; edition: string; protocolVersion: string | null }
 type Sample = {
@@ -21,6 +22,7 @@ export interface TimingRun {
   schema: 2; runId: string; origin: string; walletName: 'BSV Desktop' | 'BSV Browser'; walletVersion: string;
   identityKey: string; network: 'mainnet'; edition: string; walletProtocolVersion: string | null;
   openedAt: string; recording: boolean; samples: Sample[]; ledger: Spend[]; errors: string[]; prompts: unknown[];
+  connectionChecks?: ConnectionCheck[];
 }
 interface Storage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 const latestKey = 'pagestream-timings-latest-v1'
@@ -151,6 +153,12 @@ export class ReadingTimings {
     this.current.sample.failed = true
     this.run.errors.push(`Page ${this.current.sample.page}: ${reason}`)
     this.current = undefined
+    this.save()
+  }
+  /** Keep a network comparison with the capture so it is in the export. */
+  recordConnectionCheck(check: ConnectionCheck) {
+    if (!this.run) return
+    this.run.connectionChecks = [...(this.run.connectionChecks ?? []), check].slice(-10)
     this.save()
   }
   /** The receiver accepted a session page's payment (possibly after display). */
