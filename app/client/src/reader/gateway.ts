@@ -365,7 +365,11 @@ export function createReaderGateway(
     } catch (error) {
       if (error instanceof ReaderError) throw error
       console.warn('Wallet acquisition failed', error)
-      throw new ReaderError('We couldn’t connect to your wallet.', 'connect')
+      // Show the underlying reason (no wallet arguments or keys) so a phone
+      // failure can be diagnosed from the visible message.
+      const reason = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 160)
+        : typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message).slice(0, 160) : ''
+      throw new ReaderError(`We couldn’t connect to your wallet.${reason ? ` (${reason})` : ''}`, 'connect')
     }
     if (edition) {
       await refreshMe()
