@@ -4,6 +4,8 @@ Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 a
 
 ## Status at a glance
 
+**Server region, 13 November:** the backend moved from Railway US West to EU West (data verified before and after). Reader-path round trip p50 fell from 390 to 261 ms, which is most of the remaining time between Next and an accepted session payment. [Details](spike/evidence/payment-channel-research-2026-11-10.md).
+
 **Reading-session pilot, 11 November:** on the owner's phone (BSV Browser 1.6.3, mainnet) channel signatures took 33–39 ms; after one approval, Next showed pages 38–44 in **19–31 ms**. The first page after approval took 621 ms, now delivered on credit at activation too. Session fees were 72 sats once (42 opening + 30 settling) instead of ~23 per page. Sessions are now the reader's payment flow at up to 5,000 sats per session; one-page preparation and pilot-only controls were removed. Final timed runs on Desktop and phone remain. [Pilot and changes](spike/evidence/payment-channel-research-2026-11-10.md).
 
 **Reading sessions (payment channel), 10 November:** one wallet-approved funding per session, then one wallet signature per page and one settlement when reading stops; the next page is delivered on credit so Next shows it at once. Integrated behind backend switches (off by default) with per-page payment as fallback. 161 tests pass; an offline browser preview using native-like wallet delays measured Next at 8–23 ms after ≥0.5 s of reading. Native signing behaviour and a paid pilot remain. [Research, design and results](spike/evidence/payment-channel-research-2026-11-10.md).

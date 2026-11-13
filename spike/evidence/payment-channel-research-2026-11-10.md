@@ -113,3 +113,5 @@ Verification: 145 tests pass (fewer than before only because read-ahead tests we
 
 **Budget includes fees (13 Nov, owner direction).** "Up to 5,000 sats per session" now bounds everything the wallet spends: the session locks 5,000 − 60 = 4,940 sats (60 = the app's opening-fee cap), so locked sats + opening fee ≤ 5,000, and the 30-sat settling fee comes out of the locked sats. Up to 982 pages per session.
 
+**Server moved to Railway EU West (13 Nov, owner-approved).** Measured from the development machine in Kenya, regions near Railway's had TCP round trips of ~170 ms (EU West), ~230 (US East), ~300 (US West) and ~320 (Southeast Asia). No session was open; the ledger was snapshotted (`VACUUM INTO`, integrity ok, 47 purchases, 3 bookmarks, 1 session, 42 intents; kept locally, git-ignored), then the service and its volume moved with `railway scale eu-west=1 us-west=0`. After the move the same counts and integrity check passed. Warm `/health` through the reader's Vercel path: **p50 390 → 261 ms, p95 430 → 296 ms**. Expected Next → payment accepted ≈ 40-ms signature + one ~260-ms round trip, to be confirmed by the native timed runs.
+
