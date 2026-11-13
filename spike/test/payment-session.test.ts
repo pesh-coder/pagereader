@@ -361,9 +361,9 @@ test('a top-up abandoned after countersigning reopens the balance after a day', 
 test('a wallet without enough free sats gets an offer of what it can afford, and nothing is paid', async t => {
   const h = await harness(t)
   const real = h.reader.wallet.createAction
-  const short = Object.assign(new Error('Insufficient funds'), { code: 'WERR_INSUFFICIENT_FUNDS', totalSatoshisNeeded: 4215, moreSatoshisNeeded: 4215 })
+  const short = Object.assign(new Error('Insufficient funds'), { code: 'WERR_INSUFFICIENT_FUNDS', totalSatoshisNeeded: 1715, moreSatoshisNeeded: 1715 })
   ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw short }
-  await assert.rejects(h.session.open(h.edition.id, 5000), (error: { insufficientFunds?: { affordableBudget?: number } }) =>
+  await assert.rejects(h.session.open(h.edition.id, 2500), (error: { insufficientFunds?: { affordableBudget?: number } }) =>
     error.insufficientFunds?.affordableBudget === 770)
   assert.equal(h.session.load()?.state, 'abandoned')
   // The reader then opens what the wallet can afford.
@@ -374,9 +374,9 @@ test('a wallet without enough free sats gets an offer of what it can afford, and
   ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw Object.assign(new Error(
     'Insufficient funds in the available inputs to cover the cost of the required outputs and the transaction fee (55 more satoshis are needed, for a total of 55), plus whatever would be required in order to pay the fee to unlock and spend the outputs used to provide the additional satoshis.'), { code: 7 }) }
   await h.session.close(); await h.session.receiveChange()
-  // The phone's real message: 55 short of 5,000, so about 4,930 can be covered.
-  await assert.rejects(h.session.open(h.edition.id, 5000), (error: { insufficientFunds?: { affordableBudget?: number }; message: string }) =>
-    error.insufficientFunds?.affordableBudget === 4930 && /55 more satoshis/.test(error.message))
+  // The phone's real message: 55 short of 2,500, so about 2,430 can be covered.
+  await assert.rejects(h.session.open(h.edition.id, 2500), (error: { insufficientFunds?: { affordableBudget?: number }; message: string }) =>
+    error.insufficientFunds?.affordableBudget === 2430 && /55 more satoshis/.test(error.message))
   // A refusal that is not a lack of funds keeps the wallet's own words and offers no smaller amount.
   ;(h.reader.wallet as { createAction: unknown }).createAction = async () => { throw Object.assign(new Error('Spending authorization exceeded'), { code: 1 }) }
   await assert.rejects(h.session.open(h.edition.id, 2000), (error: { insufficientFunds?: object; message: string }) =>
@@ -389,7 +389,7 @@ test('a wallet without enough free sats gets an offer of what it can afford, and
     if (!args.options?.sendWith) throw Object.assign(new Error('Insufficient funds'), { code: 'WERR_INSUFFICIENT_FUNDS' })
     return real(args as never)
   }
-  await assert.rejects(h.session.topUp(5000), (error: { insufficientFunds?: object }) => Boolean(error.insufficientFunds))
+  await assert.rejects(h.session.topUp(2500), (error: { insufficientFunds?: object }) => Boolean(error.insufficientFunds))
   assert.equal(h.channels.row(again.channelId)!.state, 'open')
 })
 
