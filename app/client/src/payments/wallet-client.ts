@@ -338,8 +338,10 @@ export async function openWallet(callbacks: {
     // Reading sessions: timed wallet calls, and a plain timed same-origin POST
     // for page payments, which are authenticated by their channel signature.
     sessionWallet: paymentWallet as unknown as SessionWallet,
+    // No keepalive: it can route requests off the page's warm connection, and
+    // leaving no longer needs a request to finish after the page closes.
     sessionPost: (path: string, body: unknown) => instrumentedFetch(location.origin + path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true,
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }),
     async fetchPaidPage(...args: Parameters<AuthFetch['fetch']>) {
       if (activeDelivery) throw new Error('Another payment delivery is still active')
