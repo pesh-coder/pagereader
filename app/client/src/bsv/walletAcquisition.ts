@@ -41,10 +41,20 @@ async function discover(): Promise<WalletClient> {
   throw failure
 }
 
+// Name the step and the wallet's error code, so a refusal can be diagnosed
+// from the reader's message (the SDK hides unrecognised wallet errors).
+async function step<T>(name: string, pending: () => Promise<T>): Promise<T> {
+  try { return await pending() } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? ` code ${String((error as { code: unknown }).code)}` : ''
+    const message = error instanceof Error ? error.message : 'Wallet operation failed'
+    throw new Error(`${name} failed${code}: ${message}`.slice(0, 200), { cause: error })
+  }
+}
+
 export async function connectDesktopWallet (): Promise<{ wallet: WalletInterface, identityKey: string }> {
-  const wallet = await discover()
-  const { authenticated } = await wallet.isAuthenticated()
-  if (!authenticated) throw new Error('No authenticated wallet found')
-  const { publicKey } = await wallet.getPublicKey({ identityKey: true })
+  const wallet = await step('Finding the wallet', discover)
+  const { authenticated } = await step('Checking sign-in', () => wallet.isAuthenticated())
+  if (!authenticated) throw new Error('Checking sign-in failed: the wallet reports you are not signed in')
+  const { publicKey } = await step('Reading your identity key', () => wallet.getPublicKey({ identityKey: true }))
   return { wallet, identityKey: publicKey }
 }
