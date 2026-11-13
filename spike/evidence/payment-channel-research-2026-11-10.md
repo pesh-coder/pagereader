@@ -110,3 +110,6 @@ The capture's "0 paid during Next" was a classifier gap: it only recognised on-c
 - **Backend:** `PAGESTREAM_CHANNEL_IDENTITIES=all`, `PAGESTREAM_CHANNEL_MAX_SATS=5000`.
 
 Verification: 145 tests pass (fewer than before only because read-ahead tests were removed), server/client builds and lint pass. The page-turn latency target still needs the final timed run on both Desktop and phone.
+
+**Budget includes fees (13 Nov, owner direction).** "Up to 5,000 sats per session" now bounds everything the wallet spends: the session locks 5,000 − 60 = 4,940 sats (60 = the app's opening-fee cap), so locked sats + opening fee ≤ 5,000, and the 30-sat settling fee comes out of the locked sats. Up to 982 pages per session.
+

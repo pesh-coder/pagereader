@@ -52,8 +52,11 @@ async function harness(t: { after: (fn: () => unknown) => void }, enabled = true
 
 test('a reading session pays each page with one signature, delivers the next on credit, and settles once', async t => {
   const h = await harness(t)
-  const record = await h.session.open(h.edition.id, 100)
+  const record = await h.session.open(h.edition.id, 160)
   assert.equal(record.state, 'open')
+  // The approved budget covers everything the wallet spends: locked sats + opening fee.
+  assert.equal(record.terms!.capacity, 100)
+  assert.ok(record.terms!.capacity + record.fundingFeeSats! <= 160)
   assert.deepEqual(h.reader.calls, ['createAction', 'signAction', 'sendWith'])
   assert.deepEqual(h.broadcasts, [record.terms!.fundingTxid])
   for (let page = 3; page <= 6; page++) {
@@ -87,7 +90,7 @@ test('a reading session pays each page with one signature, delivers the next on 
 
 test('the page requested at approval arrives with the session, so it shows as soon as the wallet approves', async t => {
   const h = await harness(t)
-  const record = await h.session.open(h.edition.id, 100, 3)
+  const record = await h.session.open(h.edition.id, 160, 3)
   const first = h.session.takeCredit(h.edition.id, 3)
   assert.deepEqual(first?.paragraphs, h.edition.pages[2])
   assert.equal(h.store.purchases(h.reader.identity, h.edition.id).length, 0, 'credit is not ownership')
@@ -96,13 +99,13 @@ test('the page requested at approval arrives with the session, so it shows as so
   assert.equal(h.channels.row(record.channelId)!.forfeits, 0, 'paying the credited first page forfeits nothing')
   // A free or already-owned page is never credited.
   const other = await harness(t)
-  await other.session.open(other.edition.id, 100, 2)
+  await other.session.open(other.edition.id, 160, 2)
   assert.equal(other.session.takeCredit(other.edition.id, 2), undefined)
 })
 
 test('lost responses are resent as the same state and never charge twice', async t => {
   const h = await harness(t)
-  await h.session.open(h.edition.id, 100)
+  await h.session.open(h.edition.id, 160)
   const record = h.session.load(h.edition.id)!
   // Simulate a payment that reached the server but whose response was lost.
   const { signChannel, stateTransaction } = await import('../src/payment-channel.js')
@@ -118,7 +121,7 @@ test('lost responses are resent as the same state and never charge twice', async
 
 test('the receiver refuses forged, skipped, replayed-for-another-page and post-close payments', async t => {
   const h = await harness(t)
-  await h.session.open(h.edition.id, 100)
+  await h.session.open(h.edition.id, 160)
   const record = h.session.load(h.edition.id)!
   const { signChannel, stateTransaction } = await import('../src/payment-channel.js')
   const sign = async (paid: number) => Utils.toBase64(await signChannel(h.reader.wallet, record.terms!, stateTransaction(record.terms!, paid), record.serverIdentity))
@@ -140,7 +143,7 @@ test('the receiver refuses forged, skipped, replayed-for-another-page and post-c
 
 test('credit stops after repeated unpaid credited pages, bounding the server exposure', async t => {
   const h = await harness(t)
-  await h.session.open(h.edition.id, 200)
+  await h.session.open(h.edition.id, 260)
   const pages = [3, 5, 7, 9, 11] // each payment skips its credited page
   const credits: (number | undefined)[] = []
   for (const page of pages) {
@@ -155,14 +158,14 @@ test('credit stops after repeated unpaid credited pages, bounding the server exp
 test('closing an unused session returns everything but the fee, and idle sessions settle automatically', async t => {
   let clock = Date.now()
   const h = await harness(t, true, () => clock)
-  await h.session.open(h.edition.id, 100)
+  await h.session.open(h.edition.id, 160)
   await h.session.close(h.edition.id)
   await h.session.receiveChange(h.edition.id)
   assert.equal(h.received.length, 0, 'no server payout without a paid page')
   assert.equal(h.broadcasts.length, 2, 'funding, then the zero-payment settlement')
   assert.equal((h.reader.internalized[0] as { outputs: { outputIndex: number }[] }).outputs[0].outputIndex, 0)
   // A second session idles past the limit and is settled by the sweep.
-  const second = await h.session.open(h.edition.id, 100)
+  const second = await h.session.open(h.edition.id, 160)
   await h.session.pay(h.edition.id, 3)
   assert.deepEqual(await h.channels.settleIdle(), { settled: 0, failures: [] }, 'active sessions are left open')
   clock += config.channel.idleSettleMs + 1
@@ -175,12 +178,12 @@ test('closing an unused session returns everything but the fee, and idle session
 
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {
   const h = await harness(t)
-  await assert.rejects(h.session.open(h.edition.id, config.channel.capacitySats + 1), /Session amount must be/)
+  await assert.rejects(h.session.open(h.edition.id, config.channel.capacitySats + 61), /Session amount must be/)
   assert.deepEqual(h.reader.calls, [])
 })
 
 test('reading sessions are refused for wallets that are not enabled, without any wallet action', async t => {
   const h = await harness(t, false)
-  await assert.rejects(h.session.open(h.edition.id, 100), /not enabled/)
+  await assert.rejects(h.session.open(h.edition.id, 160), /not enabled/)
   assert.deepEqual(h.reader.calls, [])
 })

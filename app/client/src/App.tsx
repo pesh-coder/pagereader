@@ -749,15 +749,16 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
           ) : (
             <section aria-label="Reading session" className="session-offer">
               <p>
-                <strong>Approve once, then read.</strong> Your wallet asks once to set aside up to{' '}
-                {sessionSats} sats for this reading session. Each page then costs {config.priceSats} sats,
-                with no further prompts and no per-page miner fee.
+                <strong>Approve once, then read.</strong> Your wallet asks once to allow up to{' '}
+                {sessionSats} sats for this reading session, miner fees included. Each page then costs{' '}
+                {config.priceSats} sats, with no further prompts.
               </p>
               <p className="subtle">
                 Stop reading, stop paying: when you end the session or leave, Pagestream settles once
-                and your unspent sats return to your wallet. Opening and settling each carry one miner
-                fee (about {config.channel.settlementFeeSats} sats). If Pagestream never settles, your
-                wallet holds a refund that unlocks after 24 hours. Pages you already own open free.
+                and your unspent sats return to your wallet. The session's two miner fees (opening and
+                settling, about {config.channel.settlementFeeSats} sats each) come out of the same
+                {' '}{sessionSats} sats. If Pagestream never settles, your wallet holds a refund that
+                unlocks after 24 hours. Pages you already own open free.
               </p>
               <WalletGuidance />
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>

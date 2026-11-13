@@ -55,7 +55,7 @@ test('the reader gateway opens a session, shows the credited next page at once a
   await gateway.library()
   await gateway.connect(book)
   assert.equal(gateway.sessionsEnabled!(), true)
-  await gateway.openSession!(book, 100)
+  await gateway.openSession!(book, 160)
   assert.equal(gateway.sessionStatus!(book)?.state, 'open')
   const third = await gateway.page(book, 3)
   await gateway.bookmark(book, 3, Date.now()) // as the reader does after display

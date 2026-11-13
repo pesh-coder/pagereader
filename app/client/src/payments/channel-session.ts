@@ -78,8 +78,15 @@ export function createSessionClient(deps: SessionDeps) {
     remaining(record: SessionRecord) { return record.terms ? maxPaid(record.terms) - record.paid : 0 },
     isOpen(edition: string) { return load(edition)?.state === 'open' },
 
-    /** One wallet approval: lock `capacity` sats; refund is held before anything is sent. */
-    async open(edition: string, capacity: number = config.channel.capacitySats, firstPage?: number) {
+    /**
+     * One wallet approval for a total `budget`, miner fees included: the session
+     * locks budget − MAX_FUNDING_FEE_SATS, so the locked amount plus the opening
+     * fee never exceeds the budget. The settling fee comes out of the locked sats.
+     * The refund is held before anything is sent.
+     */
+    async open(edition: string, budget: number = config.channel.capacitySats, firstPage?: number) {
+      const capacity = budget - MAX_FUNDING_FEE_SATS
+      if (!Number.isSafeInteger(capacity) || capacity <= 0) throw new SessionError('The session amount is too small to cover its fees.', false)
       const existing = load(edition)
       // An interrupted open never reached the server's refund step: cancel it.
       if (existing?.state === 'funding') await abandon(existing)
