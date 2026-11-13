@@ -55,32 +55,33 @@ export interface SessionDeps {
 }
 export class SessionError extends Error {
   readonly retryable: boolean
-  /** The wallet lacked funds; `availableSats` is what it reported free, when known. */
-  insufficientFunds?: { availableSats?: number }
+  /** The wallet lacked funds; `affordableBudget` is the largest amount it can cover, when known. */
+  insufficientFunds?: { affordableBudget?: number }
   constructor(message: string, retryable: boolean) { super(message); this.retryable = retryable }
 }
 
 // Wallets report a shortfall of funds as WERR_INSUFFICIENT_FUNDS (code 7),
 // sometimes with totals. Anything else (e.g. a spending allowance) is not a
 // shortfall of funds: keep the wallet's own words so the reader sees why.
-function shortfall(error: unknown) {
+function shortfall(error: unknown, budget: number) {
   const value = (error ?? {}) as { code?: unknown; message?: unknown; totalSatoshisNeeded?: unknown; moreSatoshisNeeded?: unknown }
   const funds = value.code === 'WERR_INSUFFICIENT_FUNDS' || (value.code === 7 && /insufficient funds/i.test(String(value.message ?? ''))) ||
     (value.code === undefined && /insufficient funds/i.test(String(value.message ?? '')))
   if (!funds) return undefined
-  // Over a phone bridge the totals survive only in the text, e.g. "(1245 more
-  // satoshis are needed, for a total of 2045)".
-  const text = String(value.message ?? '').match(/(\d+) more satoshis are needed,? for a total of (\d+)/i)
-  const total = typeof value.totalSatoshisNeeded === 'number' ? value.totalSatoshisNeeded : text ? Number(text[2]) : undefined
+  // "N more satoshis are needed" is the shortfall for this exact request, so the
+  // largest amount the wallet can cover is the request minus N (and a margin for
+  // the fee changing). Over a phone bridge the number survives only in the text.
+  const text = String(value.message ?? '').match(/(\d+) more satoshis are needed/i)
   const more = typeof value.moreSatoshisNeeded === 'number' ? value.moreSatoshisNeeded : text ? Number(text[1]) : undefined
-  return { availableSats: total !== undefined && more !== undefined && total > more ? total - more : undefined }
+  const affordable = more === undefined ? undefined : Math.floor((budget - more - 10) / 10) * 10
+  return { affordableBudget: affordable !== undefined && affordable > 0 ? affordable : undefined }
 }
 const walletWords = (error: unknown) => {
   const value = (error ?? {}) as { code?: unknown; message?: unknown }
   return `${typeof value.message === 'string' ? value.message.slice(0, 160) : 'no message'}${value.code !== undefined ? ` (code ${String(value.code)})` : ''}`
 }
-const notEnough = (error: unknown, message: string) => {
-  const found = shortfall(error)
+const notEnough = (error: unknown, message: string, budget: number) => {
+  const found = shortfall(error, budget)
   if (!found) return new SessionError(`Your wallet refused: ${walletWords(error)}. Nothing was paid.`, false)
   return Object.assign(new SessionError(`${message} Wallet: ${walletWords(error)}.`, false), { insufficientFunds: found })
 }
@@ -202,7 +203,7 @@ export function createSessionClient(deps: SessionDeps) {
         options: { signAndProcess: false, noSend: true, randomizeOutputs: false, returnTXIDOnly: false },
       }).catch(error => {
         save({ ...record, state: 'abandoned' })
-        throw notEnough(error, `Your wallet does not have ${budget} sats free for a reading balance.`)
+        throw notEnough(error, `Your wallet does not have ${budget} sats free for a reading balance.`, budget)
       })
       const signable = created.signableTransaction
       if (!signable) throw new SessionError('The wallet did not prepare the session payment. Nothing was sent.', true)
@@ -294,7 +295,7 @@ export function createSessionClient(deps: SessionDeps) {
           })
         } catch (error) {
           await cancel()
-          throw notEnough(error, `Your wallet does not have enough free sats to top up to ${budget}.`)
+          throw notEnough(error, `Your wallet does not have enough free sats to top up to ${budget}.`, budget)
         }
         const signable = created.signableTransaction
         if (!signable) { await cancel(); throw new SessionError('The wallet did not prepare the top-up. Nothing was sent.', true) }

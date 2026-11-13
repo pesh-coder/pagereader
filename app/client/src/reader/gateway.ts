@@ -59,7 +59,7 @@ export class ReaderError extends Error {
   /** A new page needs a reading session; the reader shows the session offer. */
   needsSession?: boolean
   /** The wallet lacked funds for a balance or top-up; what it had free, if known. */
-  insufficientFunds?: { availableSats?: number }
+  insufficientFunds?: { affordableBudget?: number }
   constructor(message: string, action: 'connect' | 'retry' | 'check') {
     super(message)
     this.action = action
@@ -175,7 +175,7 @@ export function createReaderGateway(
   const asReaderError = (error: unknown, fallback: string, action: 'retry' | 'check' = 'check') => {
     if (error instanceof ReaderError) return error
     const result = new ReaderError(error instanceof Error ? error.message : fallback, action)
-    const funds = (error as { insufficientFunds?: { availableSats?: number } } | undefined)?.insufficientFunds
+    const funds = (error as { insufficientFunds?: { affordableBudget?: number } } | undefined)?.insufficientFunds
     if (funds) result.insufficientFunds = funds
     return result
   }

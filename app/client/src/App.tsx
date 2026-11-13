@@ -48,7 +48,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [costMessage, setCostMessage] = useState('')
   const [sessionMessage, setSessionMessage] = useState('')
   // The wallet lacked funds for the amount asked: offer what it can afford.
-  const [shortfall, setShortfall] = useState<{ kind: 'open' | 'topup'; attempted: number; availableSats?: number; detail: string } | null>(null)
+  const [shortfall, setShortfall] = useState<{ kind: 'open' | 'topup'; attempted: number; affordableBudget?: number; detail: string } | null>(null)
   const [fontSize, setFontSize] = useState(() =>
     Math.max(
       17,
@@ -313,7 +313,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
         // Keep the panel open with smaller balances the wallet can cover.
-        setShortfall({ kind: 'open', attempted: budget, availableSats: failure.insufficientFunds.availableSats, detail: failure.message })
+        setShortfall({ kind: 'open', attempted: budget, affordableBudget: failure.insufficientFunds.affordableBudget, detail: failure.message })
         return
       }
       setPanel(null)
@@ -336,7 +336,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       setSessionMessage(status ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
-        setShortfall({ kind: 'topup', attempted: budget, availableSats: failure.insufficientFunds.availableSats, detail: failure.message })
+        setShortfall({ kind: 'topup', attempted: budget, affordableBudget: failure.insufficientFunds.affordableBudget, detail: failure.message })
         return
       }
       setSessionMessage(failure instanceof Error ? failure.message : 'The top-up could not finish. Nothing was taken from your wallet.')
@@ -378,8 +378,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     if (!shortfall) return []
     const locked = shortfall.kind === 'topup' && session ? session.capacity - session.paidSats : 0
     const floor = shortfall.kind === 'topup' ? locked + 60 + config.priceSats : minimumBudget
-    const known = shortfall.availableSats
-    const list = known !== undefined ? [Math.floor((locked + known - 5) / 10) * 10]
+    // The wallet's own figure first; fixed steps only when it gave none.
+    const known = shortfall.affordableBudget
+    const list = known !== undefined ? [known]
       : shortfall.kind === 'topup' ? [locked + 1060, locked + 560, locked + 260] : [2000, 1000, 500]
     return [...new Set(list)].filter(budget => budget >= floor && budget < shortfall.attempted)
   })()
@@ -509,7 +510,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
           <div className="reading-tools session-tools" role="alert">
             <span>
               Your wallet does not have enough free sats to top up to {shortfall.attempted}
-              {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}. {shortfall.detail}
+              {shortfall.affordableBudget !== undefined ? ` (it can cover about ${shortfall.affordableBudget})` : ''}. {shortfall.detail}
             </span>
             {affordable.map(budget => (
               <button key={budget} className="quiet" disabled={busy} onClick={() => void topUp(budget)}>Top up to {budget}</button>
@@ -837,7 +838,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                 <div role="alert">
                   <p>
                     Your wallet does not have {shortfall.attempted} sats free
-                    {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}. Nothing was paid.
+                    {shortfall.affordableBudget !== undefined ? ` (it can cover about ${shortfall.affordableBudget})` : ''}. Nothing was paid.
                     {affordable.length ? ' You can open a smaller reading balance and top it up later:' : ' Add funds to your wallet, then try again.'}
                   </p>
                   {/* The wallet's own words, so a refusal can be diagnosed. */}
