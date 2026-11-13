@@ -1,7 +1,7 @@
 import { config } from './config.js'
 export function manifest(identityKey: string, options: { channels?: boolean } = {}) {
   return {
-    name: 'Pagereader tier-1 spike', short_name: 'Pagereader', start_url: '/', display: 'standalone',
+    name: 'Pagereader', short_name: 'Pagereader', start_url: '/', display: 'standalone',
     icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
     metanet: { schemaVersion: 1, groupPermissions: {
       description: config.provisional.permissionCopy,
