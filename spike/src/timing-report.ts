@@ -5,6 +5,7 @@ interface Sample {
   page?: number; edition?: string; identityKey?: string; txid?: string
   purchased?: boolean; visible?: boolean; totalMs?: number; trigger?: string
   timingBoundary?: string; network?: string; walletCalls?: Call[]
+  payment?: 'transaction' | 'session'; sessionPayment?: { acceptedMs?: number }
   readAhead?: { page: number; readyAtClick: boolean; preparationMs: number }
 }
 interface Run {
@@ -67,6 +68,15 @@ export function timingReport(run: Run) {
     runId: run.runId, walletName: run.walletName, walletVersion: run.walletVersion, origin: run.origin,
     paidSamples: paid.length, eligiblePaidSamples, descriptiveTimedSamples: durations.length,
     p50Ms: percentile(0.5), p95Ms: percentile(0.95), qualificationIssues: reasons,
+    // Both numbers matter: what the reader sees, and when the page was actually paid.
+    paymentAccepted: (() => {
+      const accepted = paid.filter(s => s.visible === true && Number.isFinite(s.sessionPayment?.acceptedMs))
+        .map(s => s.sessionPayment!.acceptedMs!).sort((a, b) => a - b)
+      const at = (p: number) => accepted.length ? accepted[Math.ceil(p * accepted.length) - 1] : null
+      return { samples: accepted.length, missing: paid.filter(s => s.payment === 'session').length - accepted.length,
+        p50Ms: at(0.5), p95Ms: at(0.95),
+        limitation: 'Next → receiver acceptance of that page\'s session payment. Transaction-paid pages are already paid within p50/p95 above.' }
+    })(),
     readAhead: { paymentsAhead: aheadPayments.size, preparedTurns: preparedTurns.length,
       readyTurns: readyMs.length, readyClickP95Ms: readyMs.length ? readyMs[Math.ceil(readyMs.length * .95) - 1] : null,
       preparationMs: preparedTurns.map(s => s.readAhead!.preparationMs),

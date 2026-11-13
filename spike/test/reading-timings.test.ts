@@ -36,6 +36,29 @@ test('a reading-session page counts as paid within the click, once, and qualifie
   assert.equal(report.p95Ms, 25)
 })
 
+test('a page shown on session credit records when its background payment was accepted', () => {
+  const f = fixture(), txid = 'channel:' + 'e'.repeat(32) + ':3'
+  const token = f.capture.begin(6, 'fixture', false)
+  f.advance(20)
+  const receipt = { txid, identityKey: f.context.identityKey, edition: 'fixture', page: 6, sats: 5, feeSats: 0 }
+  f.capture.finish(token, txid, f.context, [{ ...receipt, state: 'pending' as const }], true)
+  // Background signing and request arrive after the visible frame.
+  f.advance(40); f.capture.wallet({ method: 'createSignature', ms: 40, ok: true })
+  f.advance(530); f.capture.http({ path: '/api/channel-pages', status: 200, ms: 530 })
+  f.capture.paymentAccepted(txid)
+  const sample = f.capture.run!.samples[0]
+  assert.equal(sample.totalMs, 20, 'what the reader saw')
+  assert.equal(sample.sessionPayment?.acceptedMs, 590, 'when the page was actually paid')
+  assert.deepEqual(sample.sessionPayment?.walletCalls.map(c => c.method), ['createSignature'])
+  assert.deepEqual(sample.sessionPayment?.http.map(c => c.path), ['/api/channel-pages'])
+  assert.deepEqual(sample.walletCalls, [], 'background work is not counted inside the page turn')
+  assert.deepEqual(f.capture.acceptedTimes(), [590])
+  f.capture.stop()
+  const report = timingReport(JSON.parse(f.capture.export()))
+  assert.equal(report.paymentAccepted.samples, 1)
+  assert.equal(report.paymentAccepted.p95Ms, 590)
+})
+
 test('a session page without its own receipt is not counted as paid', () => {
   const f = fixture(), token = f.capture.begin(5, 'fixture', false)
   f.advance(20)

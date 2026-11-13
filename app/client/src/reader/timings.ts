@@ -8,6 +8,12 @@ type Sample = {
   purchased: boolean; visible: boolean; totalMs?: number; txid?: string;
   /** How the page was paid: one on-chain payment, or a reading-session signature. */
   payment?: 'transaction' | 'session';
+  /**
+   * Session pages shown on credit are paid after they appear. acceptedMs is
+   * Next → receiver accepted this page's payment, on the same clock as totalMs;
+   * calls are the background signing/request made for it.
+   */
+  sessionPayment?: { acceptedMs?: number; walletCalls: Sample['walletCalls']; http: HttpCall[] };
   walletCalls: { method: string; ms: number; ok: boolean; code?: string | number; diagnostic?: WalletDiagnostic; paymentMetrics?: WalletCall['paymentMetrics'] }[];
   http: HttpCall[]; startedAt: string; failed?: boolean;
 }
@@ -24,6 +30,8 @@ export class ReadingTimings {
   run: TimingRun | null = null
   storageError = false
   private current?: { token: string; start: number; sample: Sample }
+  // A displayed session page whose payment is still in flight.
+  private awaiting?: { txid: string; start: number; sample: Sample }
   private storage: Storage
   private clock: () => number
   constructor(storage: Storage, clock = () => performance.now()) {
@@ -79,7 +87,7 @@ export class ReadingTimings {
     return token
   }
   wallet(call: WalletCall) {
-    const current = this.current
+    const current = this.current ?? this.background()
     if (!current || this.clock() - call.ms < current.start) return
     // Reclassify the original error; never export arbitrary diagnostic fields.
     const diagnostic = walletDiagnostic(call.error)
@@ -88,15 +96,17 @@ export class ReadingTimings {
       [metrics.proofBytes, metrics.transportBytes].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 16 * 1024 * 1024)
       ? { knownAncestors: metrics.knownAncestors, proofBytes: metrics.proofBytes, transportBytes: metrics.transportBytes,
           ...(['serial', 'overlap'].includes(metrics.deliveryMode ?? '') ? { deliveryMode: metrics.deliveryMode } : {}) } : undefined
-    current.sample.walletCalls.push({ method: call.method, ms: call.ms, ok: call.ok,
+    const target = current.sample === this.current?.sample ? current.sample.walletCalls : current.sample.sessionPayment!.walletCalls
+    target.push({ method: call.method, ms: call.ms, ok: call.ok,
       ...(call.error?.code !== undefined ? { code: call.error.code } : {}),
       ...(safeMetrics ? { paymentMetrics: safeMetrics } : {}),
       ...(diagnostic ? { diagnostic } : {}) })
   }
   http(call: HttpCall) {
-    const current = this.current
+    const current = this.current ?? this.background()
     if (!current || this.clock() - call.ms < current.start) return
-    current.sample.http.push({ path: call.path, status: call.status, ms: call.ms,
+    const target = current.sample === this.current?.sample ? current.sample.http : current.sample.sessionPayment!.http
+    target.push({ path: call.path, status: call.status, ms: call.ms,
       ...(call.serverTiming ? { serverTiming: call.serverTiming } : {}) })
   }
   finish(token: string | undefined, txid: string | undefined, context: Context, ledger: Spend[], visible: boolean) {
@@ -119,6 +129,10 @@ export class ReadingTimings {
     if (sample.trigger === 'explicit' && unique && sessionReceipt) {
       sample.purchased = true
       sample.payment = 'session'
+      const confirmed = ledger.some(s => s.txid === txid && s.state === 'confirmed')
+      // Paid inside the click: acceptance happened before the visible frame.
+      sample.sessionPayment = { walletCalls: [], http: [], ...(confirmed ? { acceptedMs: sample.totalMs } : {}) }
+      if (!confirmed) this.awaiting = { txid: txid!, start, sample }
     } else {
       sample.purchased = sample.trigger === 'explicit' && workflow.length === 1 && workflow[0].ok && receipt.length === 1 && unique
       if (sample.purchased) sample.payment = 'transaction'
@@ -139,6 +153,15 @@ export class ReadingTimings {
     this.current = undefined
     this.save()
   }
+  /** The receiver accepted a session page's payment (possibly after display). */
+  paymentAccepted(txid: string) {
+    const awaiting = this.awaiting
+    if (!awaiting || awaiting.txid !== txid || !this.run) return
+    awaiting.sample.sessionPayment!.acceptedMs = this.clock() - awaiting.start
+    this.awaiting = undefined
+    this.save()
+  }
+  private background() { return this.awaiting ? { start: this.awaiting.start, sample: this.awaiting.sample } : undefined }
   stop(reason?: string) {
     if (!this.run?.recording) return
     if (this.current) this.fail(this.current.token, 'Capture stopped before the page was displayed.')
@@ -147,6 +170,11 @@ export class ReadingTimings {
     this.save()
   }
   paidCount() { return this.run?.samples.filter(s => s.purchased && s.visible).length ?? 0 }
+  /** Next → payment accepted, for session pages whose acceptance was observed. */
+  acceptedTimes() {
+    return this.run?.samples.filter(s => s.purchased && s.visible && s.sessionPayment?.acceptedMs !== undefined)
+      .map(s => s.sessionPayment!.acceptedMs!) ?? []
+  }
   private recordLedger(ledger: Spend[]) {
     if (this.run) this.run.ledger = ledger.map(s => ({ txid: s.txid, identityKey: s.identityKey, edition: s.edition,
       page: s.page, sats: s.sats, feeSats: s.feeSats, state: s.state }))

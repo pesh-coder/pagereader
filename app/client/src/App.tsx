@@ -25,6 +25,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [gateway] = useState(() =>
     gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
       wallet: call => timings.wallet(call), http: call => timings.http(call),
+      paid: txid => timings.paymentAccepted(txid),
     }),
   )
   const [books, setBooks] = useState<Book[]>([])

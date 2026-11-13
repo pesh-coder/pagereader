@@ -121,7 +121,7 @@ async function json<T>(response: Response): Promise<T> {
 export function createReaderGateway(
   changed: () => void,
   walletOpener?: OpenWallet,
-  observer?: { wallet(call: WalletCall): void; http(call: HttpCall): void },
+  observer?: { wallet(call: WalletCall): void; http(call: HttpCall): void; paid?(txid: string): void },
 ): ReaderGateway {
   let wallet:
     | Awaited<
@@ -197,6 +197,7 @@ export function createReaderGateway(
       saveSpend({ ...existing, ...body.purchase, identityKey, edition: selectedEdition, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
       if (me && edition === selectedEdition)
         me.purchases = [...me.purchases.filter(p => p.page !== body.purchase.page), body.purchase]
+      try { observer?.paid?.(body.purchase.txid) } catch { /* Diagnostics cannot interrupt payments. */ }
     }
     await client.idle()
     const record = client.load(selectedEdition)!

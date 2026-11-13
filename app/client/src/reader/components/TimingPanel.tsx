@@ -21,7 +21,9 @@ export function TimingPanel({ timings, start, close, unavailable, changed }: {
     <label>Installed app version <input value={version} maxLength={40} disabled={timings.run?.recording} onChange={e => setVersion(e.target.value)} /></label>
     <p>{timings.run ? `${timings.run.recording ? 'Recording' : 'Stopped'}: ${timings.paidCount()} paid page turns captured.` : 'No capture yet.'}</p>
     {timings.run?.samples.filter(sample => sample.purchased && sample.visible).slice(-5).map((sample, index) => <p key={`${sample.txid}-${index}`}>
-      Page {sample.page}: Next to visible {sample.totalMs?.toFixed(0)} ms{sample.payment === 'session' ? ' (reading session)' : ''}.
+      Page {sample.page}: Next to visible {sample.totalMs?.toFixed(0)} ms{sample.payment === 'session'
+        ? sample.sessionPayment?.acceptedMs !== undefined ? `; Next to payment accepted ${sample.sessionPayment.acceptedMs.toFixed(0)} ms` : '; payment still confirming'
+        : ''}.
     </p>)}
     <button disabled={timings.run?.recording || Boolean(unavailable) || !version.trim()} onClick={() => {
       try { start(name, version); setMessage('Capture started. Close this panel and turn pages normally.'); setExported(''); changed() }
