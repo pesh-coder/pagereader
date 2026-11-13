@@ -158,6 +158,8 @@ export class ReadingTimings {
     const awaiting = this.awaiting
     if (!awaiting || awaiting.txid !== txid || !this.run) return
     awaiting.sample.sessionPayment!.acceptedMs = this.clock() - awaiting.start
+    // The receipt was still confirming at the visible frame; record its acceptance.
+    for (const entry of this.run.ledger) if (entry.txid === txid && entry.state === 'pending') entry.state = 'confirmed'
     this.awaiting = undefined
     this.save()
   }

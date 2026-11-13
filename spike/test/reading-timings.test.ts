@@ -53,6 +53,7 @@ test('a page shown on session credit records when its background payment was acc
   assert.deepEqual(sample.sessionPayment?.http.map(c => c.path), ['/api/channel-pages'])
   assert.deepEqual(sample.walletCalls, [], 'background work is not counted inside the page turn')
   assert.deepEqual(f.capture.acceptedTimes(), [590])
+  assert.equal(f.capture.run!.ledger.find(entry => entry.txid === txid)?.state, 'confirmed', 'the export shows the accepted receipt')
   f.capture.stop()
   const report = timingReport(JSON.parse(f.capture.export()))
   assert.equal(report.paymentAccepted.samples, 1)
