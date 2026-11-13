@@ -371,19 +371,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const sessionOpen = session?.state === 'open'
   // The server may set a lower session ceiling.
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
-  // Smaller amounts to offer after a shortfall: what the wallet reported free,
-  // or fixed steps when it did not say. A top-up must still add to the balance.
-  const minimumBudget = config.channel.minCapacitySats + 60
-  const affordable = (() => {
-    if (!shortfall) return []
-    const locked = shortfall.kind === 'topup' && session ? session.capacity - session.paidSats : 0
-    const floor = shortfall.kind === 'topup' ? locked + 60 + config.priceSats : minimumBudget
-    // The wallet's own figure first; fixed steps only when it gave none.
-    const known = shortfall.affordableBudget
-    const list = known !== undefined ? [known]
-      : shortfall.kind === 'topup' ? [locked + 1060, locked + 560, locked + 260] : [2000, 1000, 500]
-    return [...new Set(list)].filter(budget => budget >= floor && budget < shortfall.attempted)
-  })()
   const notice = gateway.sessionNotice?.() ?? null
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
   const spending = summarizeSpending(receipts)
@@ -509,12 +496,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
         {book && shortfall?.kind === 'topup' && (
           <div className="reading-tools session-tools" role="alert">
             <span>
-              Your wallet does not have enough free sats to top up to {shortfall.attempted}
-              {shortfall.affordableBudget !== undefined ? ` (it can cover about ${shortfall.affordableBudget})` : ''}. {shortfall.detail}
+              Your wallet could not approve the top-up. Nothing was paid. {shortfall.detail}
             </span>
-            {affordable.map(budget => (
-              <button key={budget} className="quiet" disabled={busy} onClick={() => void topUp(budget)}>Top up to {budget}</button>
-            ))}
           </div>
         )}
       </header>
@@ -836,18 +819,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               </button>
               {shortfall?.kind === 'open' && (
                 <div role="alert">
-                  <p>
-                    Your wallet does not have {shortfall.attempted} sats free
-                    {shortfall.affordableBudget !== undefined ? ` (it can cover about ${shortfall.affordableBudget})` : ''}. Nothing was paid.
-                    {affordable.length ? ' You can open a smaller reading balance and top it up later:' : ' Add funds to your wallet, then try again.'}
-                  </p>
+                  <p>Your wallet could not approve this. Nothing was paid.</p>
                   {/* The wallet's own words, so a refusal can be diagnosed. */}
                   <p className="subtle">{shortfall.detail}</p>
-                  {affordable.map(budget => (
-                    <button key={budget} className="wide" disabled={busy} onClick={() => void startSession(budget)}>
-                      Open a {budget}-sat reading balance and page {target}
-                    </button>
-                  ))}
                 </div>
               )}
             </section>
