@@ -48,7 +48,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [costMessage, setCostMessage] = useState('')
   const [sessionMessage, setSessionMessage] = useState('')
   // The wallet lacked funds for the amount asked: offer what it can afford.
-  const [shortfall, setShortfall] = useState<{ kind: 'open' | 'topup'; attempted: number; availableSats?: number } | null>(null)
+  const [shortfall, setShortfall] = useState<{ kind: 'open' | 'topup'; attempted: number; availableSats?: number; detail: string } | null>(null)
   const [fontSize, setFontSize] = useState(() =>
     Math.max(
       17,
@@ -313,7 +313,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
         // Keep the panel open with smaller balances the wallet can cover.
-        setShortfall({ kind: 'open', attempted: budget, availableSats: failure.insufficientFunds.availableSats })
+        setShortfall({ kind: 'open', attempted: budget, availableSats: failure.insufficientFunds.availableSats, detail: failure.message })
         return
       }
       setPanel(null)
@@ -336,7 +336,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       setSessionMessage(status ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
-        setShortfall({ kind: 'topup', attempted: budget, availableSats: failure.insufficientFunds.availableSats })
+        setShortfall({ kind: 'topup', attempted: budget, availableSats: failure.insufficientFunds.availableSats, detail: failure.message })
         return
       }
       setSessionMessage(failure instanceof Error ? failure.message : 'The top-up could not finish. Nothing was taken from your wallet.')
@@ -509,7 +509,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
           <div className="reading-tools session-tools" role="alert">
             <span>
               Your wallet does not have enough free sats to top up to {shortfall.attempted}
-              {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}.
+              {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}. {shortfall.detail}
             </span>
             {affordable.map(budget => (
               <button key={budget} className="quiet" disabled={busy} onClick={() => void topUp(budget)}>Top up to {budget}</button>
@@ -840,6 +840,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                     {shortfall.availableSats !== undefined ? ` (about ${shortfall.availableSats} free)` : ''}. Nothing was paid.
                     {affordable.length ? ' You can open a smaller reading balance and top it up later:' : ' Add funds to your wallet, then try again.'}
                   </p>
+                  {/* The wallet's own words, so a refusal can be diagnosed. */}
+                  <p className="subtle">{shortfall.detail}</p>
                   {affordable.map(budget => (
                     <button key={budget} className="wide" disabled={busy} onClick={() => void startSession(budget)}>
                       Open a {budget}-sat reading balance and page {target}
