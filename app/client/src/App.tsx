@@ -453,13 +453,18 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             </button>
           </div>
         )}
-        {book && session && ['open', 'closing'].includes(session.state) && (
+        {book && session && ['open', 'closing', 'checking'].includes(session.state) && (
           <div className="reading-tools session-tools">
             <span role="status">
               {session.state === 'open'
                 ? `Reading balance · ${session.remainingSats} sats`
-                : 'Returning your reading balance to your wallet'}
+                : session.state === 'checking'
+                  ? 'Checking your reading balance…'
+                  : 'Returning your reading balance to your wallet'}
             </span>
+            {session.state === 'checking' && session.error && (
+              <button className="quiet" disabled={busy} onClick={() => void gateway.recheckSession?.()}>Retry</button>
+            )}
             {session.state === 'open' && (
               <>
                 {/* Top up refills the balance to the session amount in one wallet approval. */}

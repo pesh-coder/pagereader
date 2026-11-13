@@ -89,9 +89,11 @@ export interface ReaderGateway {
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(): Promise<SessionStatus | null>
   topUpSession?(budget: number): Promise<SessionStatus | null>
+  recheckSession?(): Promise<SessionStatus | null>
 }
 export interface SessionStatus {
-  state: SessionRecord['state']
+  /** 'checking': a saved balance not yet confirmed with the server this visit. */
+  state: SessionRecord['state'] | 'checking'
   capacity: number
   paidSats: number
   pages: number
@@ -190,15 +192,26 @@ export function createReaderGateway(
     const client = session, record = client?.load()
     if (!client || !record || openedHere.has(record.channelId)) return
     if (record.state === 'open') {
-      const resumed = await client.resume().catch(() => undefined)
-      if (resumed?.state === 'open') {
-        openedHere.add(resumed.channelId)
+      try {
+        const resumed = await client.resume()
+        sessionError = undefined
+        if (resumed?.state === 'open') {
+          openedHere.add(resumed.channelId)
+          changed()
+          return
+        }
+      } catch (error) {
+        // Never show an unconfirmed balance as usable; say why and offer Retry.
+        sessionError = `Your reading balance could not be checked: ${error instanceof Error ? error.message : 'unknown error'}`
         changed()
         return
       }
     }
     if (['funded', 'closing', 'settled'].includes(client.load()?.state ?? ''))
-      void client.receiveChange().then(changed, () => undefined)
+      void client.receiveChange().then(changed, error => {
+        sessionError = `Returning your unspent sats did not finish: ${error instanceof Error ? error.message : 'unknown error'}`
+        changed()
+      })
   }
   // Change from settled sessions this device has no record of (e.g. cleared data).
   const collectChange = () => {
@@ -546,10 +559,11 @@ export function createReaderGateway(
       // One session per wallet: the same status shows in every book.
       const record = wallet ? session?.load() : undefined
       if (!record?.terms || record.identityKey !== wallet?.identityKey || record.state === 'abandoned') return null
+      const unconfirmed = record.state === 'open' && !openedHere.has(record.channelId)
       return {
-        state: record.state, capacity: record.terms.capacity, paidSats: record.paid, pages: record.paid / record.terms.price,
+        state: unconfirmed ? 'checking' : record.state, capacity: record.terms.capacity, paidSats: record.paid, pages: record.paid / record.terms.price,
         remainingSats: session!.remaining(record), feeSats: (record.fundingFeeSats ?? 0) + record.terms.settlementFee,
-        ...(sessionError && record.state === 'open' ? { error: sessionError } : {}),
+        ...(sessionError ? { error: sessionError } : {}),
       }
     },
     async openSession(book, capacity, firstPage) {
@@ -585,6 +599,13 @@ export function createReaderGateway(
       } finally {
         changed()
       }
+      return gateway.sessionStatus!()
+    },
+    async recheckSession() {
+      sessionError = undefined
+      changed()
+      await tidySession()
+      changed()
       return gateway.sessionStatus!()
     },
     async endSession() {
@@ -898,5 +919,6 @@ export function createReaderGateway(
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
     endSession: () => exclusive(() => gateway.endSession!()),
     topUpSession: budget => exclusive(() => gateway.topUpSession!(budget)),
+    recheckSession: () => exclusive(() => gateway.recheckSession!()),
   }
 }

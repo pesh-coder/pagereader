@@ -161,3 +161,59 @@ test('leaving keeps the session: a reload within 30 minutes continues with no ap
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
   assert.equal(store.intent(reader.identity, edition.id, 5), undefined, 'no per-page payment request was started')
 })
+
+test('a saved balance is never shown as usable until the server confirms it, and Retry recovers', async t => {
+  const store = new Store(':memory:'), catalogue = loadCatalogue(), edition = catalogue[0].edition
+  const serverProto = new ProtoWallet(PrivateKey.fromRandom())
+  const serverIdentity = (await serverProto.getPublicKey({ identityKey: true })).publicKey
+  const serverWallet = new Proxy(serverProto, { get(target, name) {
+    if (name === 'internalizeAction') return async () => ({ accepted: true })
+    const value = Reflect.get(target, name)
+    return typeof value === 'function' ? value.bind(target) : value
+  } }) as unknown as WalletInterface
+  const server = http.createServer(createProbe({ store, edition, catalogue, wallet: serverWallet, serverIdentity,
+    purchasesPaused: () => false, research: false, channels: { broadcast: async () => {}, enabled: () => true } }))
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const values = new Map<string, string>()
+  const descriptors = ['localStorage', 'location', 'fetch'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)
+  const realFetch = globalThis.fetch
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true,
+    value: (input: string | URL | Request, init?: RequestInit) => realFetch(typeof input === 'string' && input.startsWith('/') ? origin + input : input, init) })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } } })
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } })
+  t.after(() => {
+    for (const [key, descriptor] of descriptors) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key)
+    server.closeAllConnections(); server.close(); store.close()
+  })
+  const reader = readerWallet()
+  let statusDown = false
+  const visit = () => {
+    const auth = new AuthFetch(reader.proto as unknown as WalletInterface)
+    const flaky = { fetch: (url: string, init?: RequestInit) => {
+      if (statusDown && /\/channels\/[a-f0-9]{32}$/.test(new URL(url).pathname)) return Promise.reject(new Error('network down'))
+      return auth.fetch(url, init as never)
+    } }
+    return createReaderGateway(() => {}, async () => ({
+      identityKey: reader.identity, version: 'fixture', network: 'mainnet', auth: flaky, sessionWallet: reader.wallet,
+      sessionPost: (path: string, body: unknown) => fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      getAttempt: () => undefined, confirmPayment: () => {}, retainPaymentAncestors: () => {}, paymentFee: () => null,
+    } as unknown as Awaited<ReturnType<Open>>))
+  }
+  const book: Book = { id: 'holmes', gid: 1661, title: edition.title, author: edition.author, mode: 'reader', editionId: edition.id, pages: edition.pages.length, sourceUrl: '' }
+  const first = visit()
+  await first.library(); await first.connect(book)
+  await first.openSession!(book, 160)
+  // Next visit: the server check fails. The balance must not look usable.
+  statusDown = true
+  const second = visit()
+  await second.library(); await second.connect(book)
+  const unconfirmed = second.sessionStatus!()
+  assert.equal(unconfirmed?.state, 'checking')
+  assert.match(unconfirmed?.error ?? '', /could not be checked: .*network down/)
+  // Retry once the connection is back.
+  statusDown = false
+  assert.equal((await second.recheckSession!())?.state, 'open')
+  assert.equal(second.sessionStatus!()?.error, undefined)
+})
