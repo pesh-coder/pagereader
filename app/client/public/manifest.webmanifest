@@ -1,7 +1,7 @@
 {
   "id": "/reader/",
-  "name": "Pagestream",
-  "short_name": "Pagestream",
+  "name": "Pagereader",
+  "short_name": "Pagereader",
   "description": "Read a classic, one page at a time.",
   "lang": "en",
   "start_url": "/reader/",

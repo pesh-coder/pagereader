@@ -97,3 +97,63 @@ test('the reader gateway opens a session, shows the credited next page at once a
   assert.equal(spending.total, 10 + 25 + config.channel.settlementFeeSats)
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
 })
+
+test('leaving keeps the session: a reload within 30 minutes continues with no approval, and an idle session returns its change', async t => {
+  const store = new Store(':memory:'), catalogue = loadCatalogue(), edition = catalogue[0].edition
+  const serverProto = new ProtoWallet(PrivateKey.fromRandom())
+  const serverIdentity = (await serverProto.getPublicKey({ identityKey: true })).publicKey
+  let received = 0
+  const serverWallet = new Proxy(serverProto, { get(target, name) {
+    if (name === 'internalizeAction') return async () => { received++; return { accepted: true } }
+    const value = Reflect.get(target, name)
+    return typeof value === 'function' ? value.bind(target) : value
+  } }) as unknown as WalletInterface
+  let clock = Date.now()
+  const app = createProbe({ store, edition, catalogue, wallet: serverWallet, serverIdentity, purchasesPaused: () => false,
+    research: false, channels: { broadcast: async () => {}, enabled: () => true, now: () => clock } })
+  const server = http.createServer(app)
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const values = new Map<string, string>()
+  const descriptors = ['localStorage', 'location', 'fetch'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)
+  const realFetch = globalThis.fetch
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true,
+    value: (input: string | URL | Request, init?: RequestInit) => realFetch(typeof input === 'string' && input.startsWith('/') ? origin + input : input, init) })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } } })
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } })
+  t.after(() => {
+    for (const [key, descriptor] of descriptors) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key)
+    server.closeAllConnections(); server.close(); store.close()
+  })
+  const reader = readerWallet()
+  // Each gateway is one reader visit (page load); browser storage persists between them.
+  const visit = () => createReaderGateway(() => {}, async () => ({
+    identityKey: reader.identity, version: 'fixture', network: 'mainnet',
+    auth: new AuthFetch(reader.proto as unknown as WalletInterface), sessionWallet: reader.wallet,
+    sessionPost: (path: string, body: unknown) => fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    getAttempt: () => undefined, confirmPayment: () => {}, retainPaymentAncestors: () => {}, paymentFee: () => null,
+  } as unknown as Awaited<ReturnType<Open>>))
+  const book: Book = { id: 'holmes', gid: 1661, title: edition.title, author: edition.author, mode: 'reader', editionId: edition.id, pages: edition.pages.length, sourceUrl: '' }
+  const first = visit()
+  await first.library(); await first.connect(book)
+  await first.openSession!(book, 160, 3)
+  await first.page(book, 3)
+  // Reload 20 minutes later: the same session continues, with no wallet action.
+  clock += 20 * 60 * 1000
+  const second = visit()
+  await second.library(); await second.connect(book)
+  assert.equal(second.sessionStatus!()?.state, 'open')
+  await second.page(book, 4)
+  assert.deepEqual(store.purchases(reader.identity, edition.id).map(p => p.page).sort(), [3, 4])
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith'])
+  // Leave for more than 30 idle minutes: the server settles; the next visit receives the change.
+  clock += config.channel.idleSettleMs + 1
+  await (app.locals.channels as { settleIdle(): Promise<unknown> }).settleIdle()
+  assert.equal(received, 1)
+  const third = visit()
+  await third.library(); await third.connect(book)
+  for (let i = 0; i < 50 && !reader.calls.includes('internalizeAction'); i++) await new Promise(r => setTimeout(r, 10))
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
+  assert.equal(third.sessionStatus!()?.state, 'received')
+})

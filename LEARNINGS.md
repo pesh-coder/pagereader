@@ -1,6 +1,6 @@
-# Pagestream: what we learned
+# Pagereader: what we learned
 
-Pagestream sells access to Project Gutenberg books without signup. Pages 1–2 are free; later pages cost 5 sats **plus a miner fee**. This note explains what works and what remains against the POC brief.
+Pagereader sells access to Project Gutenberg books without signup. Pages 1–2 are free; later pages cost 5 sats **plus a miner fee**. This note explains what works and what remains against the POC brief.
 
 ## Status at a glance
 
@@ -117,7 +117,7 @@ The reader now asks once per open reader to allow **5 sats plus up to 23 sats fe
 
 **BSV Browser 1.6.3:** free previews and owned-page resume pass. Page 3's 28 sats matches the native debit; its separate permission grant cost 199 sats. After a page-bound approval, page 4 also opened for 28 sats, reported as almost instant; the receiver independently shows its 5-sat output and 23-sat fee. A later capture confirms successful page-20 recovery and purchases through page 32, with an 840-sat ledger total; page 33 then hit the confirmed proof-depth limit. After the fix, the page-33 pilot succeeded and the ledger reached 868 sats. The owner reports all earlier native transactions are completed. The owner then confirmed pages 5 and 6 worked under the new app ceiling with no native wallet approvals, and Continue reading created no new purchase after the stopping check. The later book total is supplied above; wallet allowance consumption remains unverified. Desktop and phone have different identities, so same-identity resume is still open.
 
-The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176) requests suitable fees for ordinary micropayment users; submitted 2026-10-29. The maintainer subsequently recommended keeping 100 sats/kB for mining acceptance and identified low-fee Desktop funding parents as the earlier phone mining blocker. Raising Pagestream's cap does not lower wallet fees.
+The shared Browser wallet package hard-codes 100 sat/kB, including the package used by Browser 1.8.0; no fee-rate setting was found in its configuration screen. Desktop's lower rate was an explicit setting change. [BSV Browser issue #176](https://github.com/bsv-blockchain/bsv-browser/issues/176) requests suitable fees for ordinary micropayment users; submitted 2026-10-29. The maintainer subsequently recommended keeping 100 sats/kB for mining acceptance and identified low-fee Desktop funding parents as the earlier phone mining blocker. Raising Pagereader's cap does not lower wallet fees.
 
 ## 4. What was awkward
 

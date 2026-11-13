@@ -215,7 +215,7 @@ export async function broadcastPayment(
   try {
     result = await wallet.createAction(
       {
-        description: 'Send saved Pagestream payment',
+        description: 'Send saved Pagereader payment',
         options: { sendWith: [attempt.txid], acceptDelayedBroadcast: false },
       },
       originator,

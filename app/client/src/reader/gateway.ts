@@ -85,7 +85,6 @@ export interface ReaderGateway {
   sessionMaxSats?(): number | null
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(): Promise<SessionStatus | null>
-  leaveSession?(): void
 }
 export interface SessionStatus {
   state: SessionRecord['state']
@@ -181,12 +180,21 @@ export function createReaderGateway(
     }
     return session
   }
-  const tidySession = () => {
+  // A session from an earlier visit continues while the server still has it
+  // open (no new approval); a settled one returns its change to the wallet.
+  const tidySession = async () => {
     const client = session, record = client?.load()
     if (!client || !record || openedHere.has(record.channelId)) return
-    const settle = record.state === 'open' ? client.close() : Promise.resolve(record)
-    if (['open', 'funded', 'closing', 'settled'].includes(record.state))
-      void settle.then(() => client.receiveChange()).then(changed, () => undefined)
+    if (record.state === 'open') {
+      const resumed = await client.resume().catch(() => undefined)
+      if (resumed?.state === 'open') {
+        openedHere.add(resumed.channelId)
+        changed()
+        return
+      }
+    }
+    if (['funded', 'closing', 'settled'].includes(client.load()?.state ?? ''))
+      void client.receiveChange().then(changed, () => undefined)
   }
   const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
     const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
@@ -361,7 +369,7 @@ export function createReaderGateway(
     }
     if (edition) {
       await refreshMe()
-      tidySession()
+      await tidySession()
     }
   }
   const paidResponse = async (
@@ -559,12 +567,6 @@ export function createReaderGateway(
       await client.receiveChange()
       changed()
       return gateway.sessionStatus!()
-    },
-    leaveSession() {
-      // Leaving stops spending: settle what was signed, by beacon, without waiting.
-      const record = session?.load()
-      if (record?.state === 'open' && navigator.sendBeacon)
-        void session!.close(url => navigator.sendBeacon(url))
     },
     async preparationStatus(book, page) {
       allowSpend = false
@@ -814,7 +816,7 @@ export function createReaderGateway(
               ? 'Your wallet needs more funds. Add funds, then try purchase again.'
               : attempt.retryReason === 'fee-limit'
                 ? attempt.quotedFeeSats == null
-                  ? 'Pagestream could not verify the miner fee from the wallet’s transaction data. The unsigned page payment was cancelled. This needs a compatibility check; changing wallet settings may not help.'
+                  ? 'Pagereader could not verify the miner fee from the wallet’s transaction data. The unsigned page payment was cancelled. This needs a compatibility check; changing wallet settings may not help.'
                   : `The wallet quoted a ${attempt.quotedFeeSats}-sat miner fee, above this attempt’s ${attempt.approvedMaxFeeSats ?? config.provisional.maxPageFeeSats}-sat fee limit. The unsigned page payment was cancelled; no page payment was sent.`
                 : 'Payment cancelled. Your current page is still available.',
             'retry',

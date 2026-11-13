@@ -226,6 +226,17 @@ test('closing an unused session returns everything but the fee, and idle session
   assert.equal((await h.session.receiveChange())?.state, 'open', 'an open local record is not touched')
 })
 
+test('even a session in constant use settles before the reader refund could unlock', async t => {
+  let clock = Date.now()
+  const h = await harness(t, true, () => clock)
+  const record = await h.session.open(h.edition.id, 160)
+  clock += config.channel.maxSessionMs + 1
+  await h.session.pay(h.edition.id, 3) // still active, so not idle
+  assert.deepEqual(await h.channels.settleIdle(), { settled: 1, failures: [] })
+  assert.equal(h.channels.row(record.channelId)!.state, 'settled')
+  assert.ok(config.channel.maxSessionMs < config.channel.refundDelaySeconds * 1000)
+})
+
 test('the server-enforced ceiling refuses a larger session before any wallet action', async t => {
   const h = await harness(t)
   await assert.rejects(h.session.open(h.edition.id, config.channel.capacitySats + 61), /Session amount must be/)

@@ -1,4 +1,4 @@
-﻿# Pagestream: acceptance and remaining work
+﻿# Pagereader: acceptance and remaining work
 
 Updated 2026-11-09. **The POC is not complete.** The [learnings note](../LEARNINGS.md) explains the implementation; this file tracks whether it meets the brief. Acceptance targets follow the explicit owner exceptions below; all other requirements remain in force.
 

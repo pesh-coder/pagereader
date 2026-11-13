@@ -1,4 +1,4 @@
-# Pagestream
+# Pagereader
 
 A Project Gutenberg classics reader built with React and a persistent Express/SQLite BSV mainnet backend. Eight immutable editions are included. The first two pages of each book are public and wallet-free; paid pages use BRC-105 and identity-bound ownership/bookmarks without product signup. The wallet menu can explicitly connect a wallet to find existing purchases.
 

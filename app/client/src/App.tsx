@@ -60,12 +60,6 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const viewRevision = useRef(0)
   const article = useRef<HTMLElement>(null)
   useEffect(() => {
-    // Leaving stops spending: the open reading session settles at once.
-    const leave = () => gateway.leaveSession?.()
-    window.addEventListener('pagehide', leave)
-    return () => window.removeEventListener('pagehide', leave)
-  }, [gateway])
-  useEffect(() => {
     let cancelled = false
     gateway
       .library()
@@ -376,7 +370,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             Library
           </button>
           <span className="wordmark">
-            ¶ <span className="brand-name">Pagestream</span>
+            ¶ <span className="brand-name">Pagereader</span>
           </span>
           <div className="header-actions">
             <button
@@ -755,11 +749,12 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                 {config.priceSats} sats, with no further prompts.
               </p>
               <p className="subtle">
-                Stop reading, stop paying: when you end the session or leave, Pagestream settles once
-                and your unspent sats return to your wallet. The session's two miner fees (opening and
-                settling, about {config.channel.settlementFeeSats} sats each) come out of the same
-                {' '}{sessionSats} sats. If Pagestream never settles, your wallet holds a refund that
-                unlocks after 24 hours. Pages you already own open free.
+                Stop reading, stop paying: you pay only for pages you open. If you leave, the session
+                stays open for 30 minutes after your last page, so you can come back without approving
+                again; then it settles and your unspent sats return to your wallet. End session settles
+                at once. The session's two miner fees (opening and settling, about{' '}
+                {config.channel.settlementFeeSats} sats each) come out of the same {sessionSats} sats. If
+                Pagereader never settles, your wallet holds a refund that unlocks after 24 hours.
               </p>
               <WalletGuidance />
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>

@@ -38,8 +38,11 @@ export const config = {
     // Reader-funded fee carried by the single settlement (≈265 bytes at 100 sat/kB).
     settlementFeeSats: 30,
     refundDelaySeconds: 24 * 60 * 60,
-    // The server settles an untouched session well before the refund unlocks.
-    idleSettleMs: 10 * 60 * 1000,
+    // Leaving keeps the session: the reader can return without a new approval
+    // until it has been idle this long, then the server settles it.
+    idleSettleMs: 30 * 60 * 1000,
+    // Settle even an active session well before the reader's refund unlocks.
+    maxSessionMs: 20 * 60 * 60 * 1000,
     // Pages delivered ahead of payment that were never paid for, per session.
     maxForfeitedCredits: 2,
   },

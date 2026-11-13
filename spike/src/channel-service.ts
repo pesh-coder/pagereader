@@ -205,7 +205,7 @@ export function createChannelService(options: {
       if (current.paid > 0) {
         // Receive the payout as an ordinary BRC-29 payment; the wallet also broadcasts.
         await wallet.internalizeAction({
-          tx: beef, description: 'Pagestream reading session',
+          tx: beef, description: 'Pagereader reading session',
           labels: ['pagestream channel'],
           outputs: [{ outputIndex: 0, protocol: 'wallet payment', paymentRemittance: {
             derivationPrefix: current.payout_prefix, derivationSuffix: current.payout_suffix, senderIdentityKey: current.identity,
@@ -218,8 +218,9 @@ export function createChannelService(options: {
 
     /** Settle sessions idle past the limit, and retry interrupted settlements. */
     async settleIdle() {
-      const cutoff = now() - config.channel.idleSettleMs
-      const due = db.prepare("SELECT id FROM channels WHERE (state IN ('funded','open') AND last_activity<=?) OR state='settling'").all(cutoff) as { id: string }[]
+      const cutoff = now() - config.channel.idleSettleMs, oldest = now() - config.channel.maxSessionMs
+      const due = db.prepare(`SELECT id FROM channels WHERE (state IN ('funded','open') AND (last_activity<=? OR created_at<=?))
+        OR state='settling'`).all(cutoff, oldest) as { id: string }[]
       const failures: string[] = []
       for (const { id } of due) await service.settle(id).catch(() => failures.push(id))
       return { settled: due.length - failures.length, failures }

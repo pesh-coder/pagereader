@@ -117,9 +117,9 @@ export function createSessionClient(deps: SessionDeps) {
       const lockingScript = fundingScript(offer.readerKey, offer.serverKey).toHex()
       // Same unsigned → checked → signed noSend path as page payments.
       const created = await wallet.createAction({
-        description: 'Open Pagestream reading session',
+        description: 'Open Pagereader reading session',
         labels: ['pagestream channel'],
-        outputs: [{ lockingScript, satoshis: capacity, outputDescription: 'Pagestream reading session' }],
+        outputs: [{ lockingScript, satoshis: capacity, outputDescription: 'Pagereader reading session' }],
         options: { signAndProcess: false, noSend: true, randomizeOutputs: false, returnTXIDOnly: false },
       })
       const signable = created.signableTransaction
@@ -157,7 +157,7 @@ export function createSessionClient(deps: SessionDeps) {
       }
       // From here the refund is held; release the exact signed funding.
       const sent = await wallet.createAction({
-        description: 'Send Pagestream reading session', options: { sendWith: [record.terms!.fundingTxid], acceptDelayedBroadcast: false },
+        description: 'Send Pagereader reading session', options: { sendWith: [record.terms!.fundingTxid], acceptDelayedBroadcast: false },
       })
       const status = sent.sendWithResults?.find(result => result.txid === record.terms!.fundingTxid)?.status
       if (status !== 'unproven' && status !== 'sending')
@@ -206,6 +206,32 @@ export function createSessionClient(deps: SessionDeps) {
       return result
     },
 
+    /**
+     * Rejoin a session opened in an earlier visit (reload or return) while the
+     * server still has it open: no new wallet approval. Anything else is closed
+     * so its change can be received.
+     */
+    async resume() {
+      const record = load()
+      if (record?.state !== 'open' || !record.terms) return record
+      const status = await deps.authJson<{ state: string; paid: number }>(api(record.edition, `channels/${record.channelId}`), 'GET')
+      if (status.state === 'open') {
+        if (status.paid === record.paid) return record
+        // A page signed just before leaving may have been accepted.
+        if (record.pending?.paid === status.paid) {
+          save({ ...record, paid: status.paid, pending: undefined })
+          return load()
+        }
+      }
+      if (status.state === 'open') {
+        // Local and server state disagree: settle now rather than guess.
+        await client.close()
+        return load()
+      }
+      save({ ...record, state: 'closing', pending: undefined })
+      return load()
+    },
+
     /** Stop paying: the server settles the latest signed state. Safe to repeat. */
     async close(beacon?: (url: string) => boolean) {
       const record = load()
@@ -235,7 +261,7 @@ export function createSessionClient(deps: SessionDeps) {
       const changeIndex = settlement.outputs.findIndex(output => output.lockingScript.toHex() === record.terms!.readerScript)
       if (changeIndex >= 0)
         await wallet.internalizeAction({
-          tx: Utils.toArray(status.settlementBeef, 'base64'), description: 'Pagestream reading session change',
+          tx: Utils.toArray(status.settlementBeef, 'base64'), description: 'Pagereader reading session change',
           labels: ['pagestream channel'],
           outputs: [{ outputIndex: changeIndex, protocol: 'wallet payment', paymentRemittance: {
             derivationPrefix: record.readerPrefix, derivationSuffix: record.readerSuffix, senderIdentityKey: record.serverIdentity,
