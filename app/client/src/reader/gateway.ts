@@ -680,21 +680,27 @@ export function createReaderGateway(
           )
         return checkPage((await response.json()) as ReaderPage, book, page)
       }
-      if (!wallet && page !== config.freePages + 1 && !recoveryOnly)
-        throw new Error('Open page 3 first to access your owned pages.')
       requested = page
       allowSpend = false
       checkedStatus = undefined
       lastHttp = undefined
       lastWalletFailure = undefined
-      const sessionRecord = !recoveryOnly && wallet ? session?.load() : undefined
-      if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId)) {
-        // After switching books, load that book's purchases before deciding to pay.
-        if (!me) {
+      if (!recoveryOnly) {
+        // After a reload (or a book switch) connect and load purchases first, and
+        // confirm a saved balance with the server, before deciding how to pay:
+        // an open balance pays for the page instead of asking for a new one.
+        if (!wallet || !me) {
           try { await acquire() }
           catch (error) { throw error instanceof ReaderError ? error : new ReaderError('Your purchases could not load. Try again.', 'retry') }
         }
+        const saved = session?.load()
+        if (saved?.state === 'open' && !openedHere.has(saved.channelId)) {
+          await tidySession()
+          if (session?.load()?.state === 'open' && !openedHere.has(saved.channelId))
+            throw new ReaderError(sessionError ?? 'Your reading balance could not be checked. Try again.', 'retry')
+        }
       }
+      const sessionRecord = !recoveryOnly && wallet ? session?.load() : undefined
       const unsignedAttempt = !['preparing', 'prepared', 'signing', 'signed'].includes(wallet?.getAttempt(edition, page)?.state ?? '')
       if (sessionRecord?.state === 'open' && openedHere.has(sessionRecord.channelId) && me &&
         !me.purchases.some(p => p.page === page) && unsignedAttempt) {

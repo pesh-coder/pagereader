@@ -247,7 +247,10 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
       void turn(book, n, true)
       return
     }
-    if (sessionOpen) {
+    // Not yet connected, or a saved balance still being checked after a reload:
+    // the gateway connects and confirms it first, and asks for a new balance
+    // only if none is open.
+    if (sessionOpen || !gateway.hasIdentity() || session?.state === 'checking') {
       void turn(book, n)
       return
     }

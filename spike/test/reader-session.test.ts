@@ -147,6 +147,14 @@ test('leaving keeps the session: a reload within 30 minutes continues with no ap
   await second.page(book, 4)
   assert.deepEqual(store.purchases(reader.identity, edition.id).map(p => p.page).sort(), [3, 4])
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith'])
+  // A reload that turns straight to the next page, before the wallet is
+  // connected, pays from the saved balance instead of asking for a new one.
+  const direct = visit()
+  await direct.library()
+  await direct.page(book, 5)
+  assert.equal(direct.sessionStatus!()?.state, 'open')
+  assert.deepEqual(store.purchases(reader.identity, edition.id).map(p => p.page).sort(), [3, 4, 5])
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith'])
   // Leave for more than 30 idle minutes: the server settles; the next visit receives the change.
   clock += config.channel.idleSettleMs + 1
   await (app.locals.channels as { settleIdle(): Promise<unknown> }).settleIdle()
@@ -158,9 +166,9 @@ test('leaving keeps the session: a reload within 30 minutes continues with no ap
   assert.equal(third.sessionStatus!()?.state, 'received')
   assert.match(third.sessionNotice!() ?? '', /^\d+ sats from your reading balance returned to your wallet\.$/)
   // With no open session, a new page asks for one and never uses another payment method.
-  await assert.rejects(third.page(book, 5), (error: { needsSession?: boolean }) => error.needsSession === true)
+  await assert.rejects(third.page(book, 6), (error: { needsSession?: boolean }) => error.needsSession === true)
   assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'internalizeAction'])
-  assert.equal(store.intent(reader.identity, edition.id, 5), undefined, 'no per-page payment request was started')
+  assert.equal(store.intent(reader.identity, edition.id, 6), undefined, 'no per-page payment request was started')
 })
 
 test('a saved balance is never shown as usable until the server confirms it, and Retry recovers', async t => {
