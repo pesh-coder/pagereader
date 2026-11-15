@@ -1,4 +1,4 @@
-import { config, type Book } from '../gateway'
+import { balancePages, config, type Book } from '../gateway'
 
 export function Library({
   books,
@@ -30,10 +30,29 @@ export function Library({
         <a className="hero-action" href="#books">
           Start reading free ↓
         </a>
-        <p className="subtle">
-          First two pages free. Paid pages cost 5 sats each, plus transaction
-          fees.
-        </p>
+        <section className="how-it-works" aria-label="How it works">
+          <h2>How it works</h2>
+          <ol>
+            <li>
+              Read the first {config.freePages} pages of any book free. No
+              wallet needed.
+            </li>
+            <li>
+              To keep reading, approve a {config.channel.capacitySats}-sat
+              reading balance once in your BSV wallet. That’s enough for about{' '}
+              {balancePages(config.channel.capacitySats)} pages, fees included.
+            </li>
+            <li>
+              Each page then costs {config.priceSats} sats, with no more
+              prompts.
+            </li>
+            <li>Withdraw what’s left whenever you like.</li>
+          </ol>
+          <p className="subtle">
+            You’ll need BSV Browser (phone) or BSV Desktop with at least{' '}
+            {config.channel.capacitySats} sats.
+          </p>
+        </section>
       </div>
       {!books.length && !hasError && <p role="status">Opening the library…</p>}
       <div className="book-grid" id="books">

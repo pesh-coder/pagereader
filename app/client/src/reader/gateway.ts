@@ -6,6 +6,10 @@ import type { SessionClient, SessionPage, SessionRecord } from '../payments/chan
 
 export { config }
 export type { Spend }
+/** Roughly how many pages a balance of `sats` pays for, after its opening
+ * (at most 60, as in channel-session) and settling fees; rounded down to tens. */
+export const balancePages = (sats: number) =>
+  Math.max(0, Math.floor((sats - 60 - config.channel.settlementFeeSats) / config.priceSats / 10) * 10)
 export interface Book {
   id: string
   gid: number
@@ -606,7 +610,7 @@ export function createReaderGateway(
         openedHere.add(record.channelId)
         sessionError = undefined
       } catch (error) {
-        throw asReaderError(error, 'The reading session could not open.')
+        throw asReaderError(error, 'The reading balance could not open.')
       } finally {
         changed()
       }
@@ -712,7 +716,7 @@ export function createReaderGateway(
           if (session?.load()?.state !== 'open') {
             // Collect the returned sats now rather than on the next visit.
             void session?.receiveChange().then(receivedChange, () => undefined)
-            throw Object.assign(new ReaderError('Your reading session has ended, so this page was not charged. Approve a new session to keep reading.', 'retry'), { needsSession: true })
+            throw Object.assign(new ReaderError('Your reading balance has ended, so this page was not charged. Approve a new balance to keep reading.', 'retry'), { needsSession: true })
           }
           throw new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
         } finally { changed() }
@@ -804,7 +808,7 @@ export function createReaderGateway(
             // New pages are bought only through a reading session. The per-page
             // flow above remains for checking and recovering earlier attempts.
             if (!feeApproval)
-              throw Object.assign(new ReaderError('Approve a reading session to open new pages.', 'retry'), { needsSession: true })
+              throw Object.assign(new ReaderError('Approve a reading balance to open new pages.', 'retry'), { needsSession: true })
             const requestId = retryable
               ? attempt!.requestId
               : crypto.randomUUID()

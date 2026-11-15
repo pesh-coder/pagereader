@@ -184,7 +184,7 @@ export function createSessionClient(deps: SessionDeps) {
       // An interrupted open never reached the server's refund step: cancel it.
       if (existing?.state === 'funding') await abandon(existing)
       else if (existing && ['funded', 'open', 'closing'].includes(existing.state))
-        throw new SessionError('A reading session is already open or closing.', false)
+        throw new SessionError('A reading balance is already open or closing.', false)
       const offer = await deps.authJson<Offer>(api(edition, 'channels'), 'POST', { capacity })
       await checkOffer(offer, capacity)
       const readerPrefix = Utils.toBase64(Random(16)), readerSuffix = Utils.toBase64(Random(16))
@@ -353,7 +353,7 @@ export function createSessionClient(deps: SessionDeps) {
       const run = async (): Promise<SessionPage> => {
         let record = load()
         if (record?.topUp) record = await finishTopUp(record)
-        if (record?.state !== 'open' || !record.terms) throw new SessionError('No open reading session.', false)
+        if (record?.state !== 'open' || !record.terms) throw new SessionError('No open reading balance.', false)
         if (record.pending && (record.pending.page !== page || record.pending.edition !== edition)) {
           // Finish the earlier signed page first (any book); it may already be accepted.
           const earlier = await send(record, record.pending)
@@ -361,7 +361,7 @@ export function createSessionClient(deps: SessionDeps) {
           record = load()!
         }
         const paid = record.pending?.paid ?? record.paid + record.terms!.price
-        if (paid > maxPaid(record.terms!)) throw new SessionError('This reading session is spent. End it to receive your change, then open another.', false)
+        if (paid > maxPaid(record.terms!)) throw new SessionError('This reading balance is spent. Top up, or withdraw and open another.', false)
         const pending = record.pending ?? { paid, edition, page, signature: Utils.toBase64(
           await signChannel(wallet, record.terms!, stateTransaction(record.terms!, paid), record.serverIdentity)) }
         save({ ...record, pending })
@@ -475,7 +475,7 @@ export function createSessionClient(deps: SessionDeps) {
       // Settled by the server (idle or closed elsewhere); change is received next.
       credit = undefined
       save({ ...load()!, state: 'closing', pending: undefined })
-      throw new SessionError('Your reading session has ended, so this page was not paid. Your unspent sats are being returned.', false)
+      throw new SessionError('Your reading balance has ended, so this page was not paid. Your unspent sats are being returned.', false)
     }
     if (!response.ok) {
       // A definitive refusal never consumed this state; the same amount is reused.

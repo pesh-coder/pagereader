@@ -88,7 +88,7 @@ test('a reading session pays each page with one signature, delivers the next on 
   const change = h.reader.internalized[0] as { outputs: { outputIndex: number; paymentRemittance: { senderIdentityKey: string } }[] }
   assert.equal(change.outputs[0].outputIndex, 1)
   // A closed session accepts no further payments.
-  await assert.rejects(h.session.pay(h.edition.id, 7), /No open reading session/)
+  await assert.rejects(h.session.pay(h.edition.id, 7), /No open reading balance/)
 })
 
 test('the page requested at approval arrives with the session, so it shows as soon as the wallet approves', async t => {

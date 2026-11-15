@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
+  balancePages,
   config,
   createReaderGateway,
   ReaderError,
@@ -323,7 +324,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
         return
       }
       setPanel(null)
-      setError(failure instanceof Error ? failure.message : 'The reading session could not open. Nothing was paid.')
+      setError(failure instanceof Error ? failure.message : 'The reading balance could not open. Nothing was paid.')
       return
     } finally {
       lock.current = false
@@ -772,7 +773,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             ))}
           </nav>
           <p className="subtle">
-            More pages appear after your wallet identifies you at page 3.
+            Connect your wallet at page {config.freePages + 1} to see and buy the rest of the book.
           </p>
         </Panel>
       )}
@@ -807,18 +808,15 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
           ) : (
             <section aria-label="Reading session" className="session-offer">
               <p>
-                <strong>Approve once, then read.</strong> Your wallet asks once to allow up to{' '}
-                {sessionSats} sats for this reading session, miner fees included. Each page then costs{' '}
-                {config.priceSats} sats, with no further prompts.
+                <strong>Approve once, then read.</strong> Your wallet will ask you to approve a reading
+                balance of up to {sessionSats} sats. That’s about {balancePages(sessionSats)} pages, fees
+                included. Each page then costs {config.priceSats} sats, with no further prompts.
               </p>
-              <p className="subtle">
-                Stop reading, stop paying: you pay only for pages you open. Your reading balance stays
-                available when you leave and come back, in any book. Top it up whenever you choose (one
-                wallet approval), or withdraw it to return the unspent sats to your wallet at once. The
-                balance's miner fees (opening and returning, about {config.channel.settlementFeeSats} sats
-                each) come out of the same {sessionSats} sats. While held, these sats are not in your
-                wallet's spendable balance; your wallet keeps a refund in case Pagereader ever stops.
-              </p>
+              <ul className="subtle">
+                <li>Pay only for pages you open. Your balance stays for your next visit, in any book.</li>
+                <li><strong>Top up</strong> anytime, or <strong>Withdraw</strong> to get the unused sats back immediately.</li>
+                <li>If Pagereader ever stopped, your wallet gets the sats back automatically.</li>
+              </ul>
               <WalletGuidance />
               <button className="paid-action wide" disabled={busy} onClick={() => void startSession()}>
                 Approve up to {sessionSats} sats and open page {target}
@@ -828,6 +826,10 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                   <p>Your wallet could not approve this. Nothing was paid.</p>
                   {/* The wallet's own words, so a refusal can be diagnosed. */}
                   <p className="subtle">{shortfall.detail}</p>
+                  <p className="subtle">
+                    Tip: keep a little more than {sessionSats} sats in your wallet. It sometimes needs a few
+                    extra sats to renew Pagereader’s monthly allowance.
+                  </p>
                 </div>
               )}
             </section>

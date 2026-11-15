@@ -854,6 +854,23 @@ h1,
   border: 0;
   border-top: 1px solid var(--rule);
 }
+.how-it-works {
+  margin: 28px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.how-it-works h2 {
+  margin: 0 0 8px;
+}
+.how-it-works ol,
+.session-offer ul {
+  padding-left: 20px;
+  line-height: 1.5;
+}
+.how-it-works li,
+.session-offer li {
+  margin-bottom: 6px;
+}
 .wallet-guidance {
   margin: 20px 0;
   padding-top: 12px;
