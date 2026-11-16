@@ -24,8 +24,10 @@ export const config = {
     liveTestPermitMs: 300000,
     nativeApprovalTimeoutMs: 900000,
     nativeResponseLimitBytes: 16777216,
+    // Shown by the reader's wallet in Pagereader's permission prompt (manifest);
+    // keep the amount in step with walletLimitSats. Changing it re-prompts wallets.
     permissionCopy:
-      'PROVISIONAL: your wallet may offer a monthly app allowance, including fees. Record the actual prompts and grant; one prompt is not yet proven.',
+      'Pay for the pages you read in Pagereader, up to 5,000 sats a month including fees.',
     readerPermissionCopy:
       'Your wallet may request a separate saved permission. Review any additional cost before approving.',
     unknownFeeCopy: 'fees not yet measured',
