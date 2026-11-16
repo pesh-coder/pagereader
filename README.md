@@ -2,13 +2,13 @@
 
 A reader for Project Gutenberg classics where you pay a few satoshis per page with a BSV wallet. There is no signup: your wallet's identity key is your account. Eight complete books are included. Pages 1–2 of every book are free and need no wallet; each later page costs **5 sats**.
 
-**Status: finished proof of concept on BSV mainnet** (live at https://pagereader.vercel.app). Readers approve one **reading balance** of up to 2,500 sats, then turn pages with no wallet prompts. Each page is paid by a wallet signature in the background. Paid pages appeared in **31 ms at the 95th percentile on BSV Browser** (phone, 23 pages) and **17 ms on BSV Desktop** (21 pages), against a 500 ms target. Top up has also been tested with a real wallet. Not yet done: the demo recording.
+**Status: finished proof of concept on BSV mainnet** (live at https://pagereader.vercel.app). Readers approve one **reading balance** of up to 5,000 sats, then turn pages with no wallet prompts. Each page is paid by a wallet signature in the background. Paid pages appeared in **31 ms at the 95th percentile on BSV Browser** (phone, 23 pages) and **17 ms on BSV Desktop** (21 pages), against a 500 ms target. Top up has also been tested with a real wallet. Not yet done: the demo recording.
 
 **Start with [LEARNINGS.md](LEARNINGS.md).** It explains how payments work, what we tried and replaced, and the wallet behaviour to watch out for.
 
 ## How it works, in one paragraph
 
-The reader opens a **reading balance**, a one-way payment channel. One wallet approval locks the sats into an output that needs both the reader's and the server's signatures. The server signs a 60-day refund to the reader before anything is sent. For each page the wallet signs "the server may take 5 × n sats", and the server returns that page plus the next one on credit, so Next is instant. **Top up** refills the balance with one approval. **Withdraw** settles once and returns the unspent sats. Unused balances are returned automatically after 30 days without reading.
+The reader opens a **reading balance**, a one-way payment channel. One wallet approval locks the sats into an output that needs both the reader's and the server's signatures. The server signs a 60-day refund to the reader before anything is sent. For each page the wallet signs "the server may take 5 × n sats", and the server returns that page plus the next one on credit, so Next is instant. **Top up** adds any amount from 100 sats with one approval. **Withdraw** returns everything, or just the amount the reader chooses (the rest stays as a smaller balance), with no approval. Unused balances are returned automatically after 30 days without reading.
 
 ## Repository layout
 
@@ -40,7 +40,7 @@ The reader is at http://localhost:3108/reader/. `--local-wallet-manifest` also s
 Reading balances are off unless the server has a receiving wallet and these settings:
 - `PAGESTREAM_CHANNELS_ENABLED=1`
 - `PAGESTREAM_CHANNEL_IDENTITIES`: a comma-separated list of allowed identity keys, or `all`
-- `PAGESTREAM_CHANNEL_MAX_SATS` (optional): a lower ceiling than the 2,500-sat default
+- `PAGESTREAM_CHANNEL_MAX_SATS` (optional): a lower ceiling than the 5,000-sat default
 
 **Previews with no wallet and no money.** Run these from the repository root:
 - `node --import tsx spike/scripts/preview-sessions.ts`: the real reader and server code with a simulated wallet at phone-like speeds, at http://127.0.0.1:3113/preview

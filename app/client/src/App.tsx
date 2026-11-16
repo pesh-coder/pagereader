@@ -34,10 +34,11 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [book, setBook] = useState<Book | null>(null)
   const [page, setPage] = useState<ReaderPage | null>(null)
   const [panel, setPanel] = useState<
-    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | 'timings' | 'topup' | null
+    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | 'timings' | 'topup' | 'withdraw' | null
   >(null)
   const [target, setTarget] = useState(3)
   const [topUpSats, setTopUpSats] = useState(String(config.channel.minTopUpSats))
+  const [withdrawSats, setWithdrawSats] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [paymentDetails, setPaymentDetails] = useState<string[]>([])
@@ -358,6 +359,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   }
   async function endSession() {
     if (!book || busy || lock.current || !gateway.endSession) return
+    setPanel(null)
     lock.current = true
     setBusy(true)
     setSessionMessage('')
@@ -368,6 +370,22 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
         : 'Withdrawing: your unspent sats return to your wallet once confirmed.')
     } catch (failure) {
       setSessionMessage(failure instanceof Error ? failure.message : 'The balance could not be withdrawn yet. Try again in a moment.')
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+  async function withdrawPart(amountSats: number) {
+    if (!book || busy || lock.current || !gateway.withdrawSession) return
+    setPanel(null)
+    lock.current = true
+    setBusy(true)
+    setSessionMessage('')
+    try {
+      // Success and a saved, still-finishing withdrawal report through the balance bar.
+      await gateway.withdrawSession(amountSats)
+    } catch (failure) {
+      setSessionMessage(failure instanceof Error ? failure.message : 'The withdrawal could not finish. Your balance is unchanged.')
     } finally {
       lock.current = false
       setBusy(false)
@@ -384,6 +402,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
   // A top-up can bring the balance back up to the full session amount at most.
   const maxTopUp = session ? Math.max(0, sessionSats - (session.capacity - session.paidSats)) : 0
+  // A partial withdrawal keeps a minimum balance and pays its fee (~40 sats) from it.
+  const maxWithdraw = session ? Math.max(0, session.remainingSats - 100) : 0
+  const withdrawValid = /^\d+$/.test(withdrawSats) && Number(withdrawSats) >= 1 && Number(withdrawSats) <= maxWithdraw
   const topUpValid = /^\d+$/.test(topUpSats) && Number(topUpSats) >= config.channel.minTopUpSats && Number(topUpSats) <= maxTopUp
   const notice = gateway.sessionNotice?.() ?? null
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
@@ -500,7 +521,7 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
                 {maxTopUp >= config.channel.minTopUpSats && (
                   <button className="quiet" disabled={busy} onClick={() => setPanel('topup')}>Top up</button>
                 )}
-                <button className="quiet" disabled={busy} onClick={() => void endSession()}>Withdraw</button>
+                <button className="quiet" disabled={busy} onClick={() => setPanel('withdraw')}>Withdraw</button>
               </>
             )}
           </div>
@@ -861,6 +882,28 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               {topUpValid ? `Add ${Number(topUpSats)} sats` : `Enter ${config.channel.minTopUpSats}–${maxTopUp} sats`}
             </button>
           </form>
+        </Panel>
+      )}
+      {panel === 'withdraw' && session?.state === 'open' && (
+        <Panel title="Withdraw from your reading balance" close={close}>
+          <p>You have {session.remainingSats} sats in your reading balance. Withdrawing needs no wallet approval.</p>
+          <button className="wide" disabled={busy} onClick={() => void endSession()}>
+            Withdraw everything ({session.remainingSats} sats)
+          </button>
+          {maxWithdraw >= 1 && (
+            <form onSubmit={event => { event.preventDefault(); if (withdrawValid) void withdrawPart(Number(withdrawSats)) }}>
+              <label htmlFor="withdraw-sats">Or withdraw part of it:</label>
+              <input id="withdraw-sats" type="number" inputMode="numeric" min={1} max={maxWithdraw} step={1}
+                value={withdrawSats} placeholder={`1–${maxWithdraw}`} onChange={event => setWithdrawSats(event.target.value)} />
+              <p className="subtle">
+                Up to {maxWithdraw} sats. The rest stays as your reading balance. A small miner fee (about 40 sats) comes
+                out of the balance.
+              </p>
+              <button className="wide" type="submit" disabled={busy || !withdrawValid}>
+                {withdrawValid ? `Withdraw ${Number(withdrawSats)} sats` : `Enter 1–${maxWithdraw} sats`}
+              </button>
+            </form>
+          )}
         </Panel>
       )}
       {panel === 'spent' && (

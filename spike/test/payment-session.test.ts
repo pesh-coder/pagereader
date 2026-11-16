@@ -428,3 +428,37 @@ test('reading sessions are refused for wallets that are not enabled, without any
   await assert.rejects(h.session.open(h.edition.id, 160), /not enabled/)
   assert.deepEqual(h.reader.calls, [])
 })
+
+test('partial withdrawal: chosen sats go back to the wallet, the rest stays as a smaller balance, with no wallet approval', async t => {
+  const h = await harness(t)
+  const parent = await h.session.open(h.edition.id, 1060)         // locks 1000
+  for (const page of [3, 4, 5]) await h.session.pay(h.edition.id, page) // 15 paid, 985 left in the balance
+  const before = h.reader.calls.length
+  const next = await h.session.withdraw(300)
+  // No createAction or signAction: the wallet only receives the 300 sats.
+  assert.deepEqual(h.reader.calls.slice(before), ['internalizeAction'])
+  const back = h.reader.internalized.at(-1) as { tx: number[]; outputs: { outputIndex: number }[] }
+  const tx = Transaction.fromAtomicBEEF(back.tx)
+  assert.equal(tx.outputs[back.outputs[0].outputIndex].satoshis, 300)
+  // One transaction: pages read to the server, 300 back, the rest locked as the new balance; fee from the balance.
+  assert.deepEqual(tx.outputs.map(o => o.satoshis), [15, 300, next.terms!.capacity])
+  const fee = 1000 - 15 - 300 - next.terms!.capacity
+  assert.ok(fee > 0 && fee < 60, `miner fee ${fee} paid from the balance`)
+  assert.equal(next.state, 'open'); assert.equal(next.paid, 0)
+  assert.equal(h.channels.row(parent.channelId)!.state, 'settled')
+  assert.equal(h.received.length, 1, 'the server received the 15 sats it was owed (and broadcast)')
+  // Reading continues on the smaller balance.
+  await h.session.pay(h.edition.id, 6)
+  assert.equal(h.channels.row(next.channelId)!.paid, 5)
+  // Too much would leave less than the smallest balance: refused before any server step.
+  await assert.rejects(h.session.withdraw(next.terms!.capacity), /leave too little/)
+})
+
+test('partial withdrawal before any page is read: the server broadcasts it', async t => {
+  const h = await harness(t)
+  await h.session.open(h.edition.id, 1060)
+  const next = await h.session.withdraw(200)
+  const tx = Transaction.fromAtomicBEEF((h.reader.internalized.at(-1) as { tx: number[] }).tx)
+  assert.deepEqual(tx.outputs.map(o => o.satoshis), [200, next.terms!.capacity])
+  assert.ok(h.broadcasts.includes(next.terms!.fundingTxid))
+})

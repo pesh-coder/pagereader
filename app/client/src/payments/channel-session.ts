@@ -1,11 +1,11 @@
 // Reader side of a reading session (unidirectional payment channel).
 // Open: one wallet-approved funding. Page: one createSignature and one plain
 // request. Close: the server settles once; the reader receives the change.
-import { Random, Transaction, Utils, type WalletInterface } from '@bsv/sdk'
+import { LockingScript, Random, Transaction, UnlockingScript, Utils, type WalletInterface } from '@bsv/sdk'
 import { config } from './config.js'
 import { networkFee } from './payment-cost.js'
 import {
-  channelKeys, channelUnlock, checkTopUp, fundingScript, maxPaid, refundTransaction, selfPaymentScript, signChannel,
+  channelKeys, channelUnlock, checkTopUp, fundingScript, maxPaid, refundTransaction, scriptValid, selfPaymentScript, signChannel,
   signChannelHash, stateTransaction, validateTerms, verifyChannel, verifyChannelHash, type ChannelTerms,
 } from './payment-channel.js'
 
@@ -31,7 +31,11 @@ export interface SessionRecord {
   settlementTxid?: string
   openedAt: number
   /** A top-up whose new balance is funded on the server but not yet sent/activated. */
-  topUp?: { childId: string; stage: 'funded' | 'sent'; next: SessionRecord }
+  topUp?: {
+    childId: string; stage: 'funded' | 'sent'; next: SessionRecord
+    /** A partial withdrawal: the server broadcasts, then the wallet receives `sats` from output `vout`. */
+    withdrawal?: { beef: string; vout: number; prefix: string; suffix: string; sats: number }
+  }
 }
 type Offer = {
   channelId: string; serverIdentity: string; serverKey: string; readerKey: string; capacity: number; price: number
@@ -97,6 +101,14 @@ const MAX_FEE_SATS_PER_BYTE = 0.5
 // Generous size estimate before signing: every input counted at 150 bytes.
 const feeLimit = (tx: Transaction) =>
   Math.ceil((10 + tx.inputs.length * 150 + tx.outputs.reduce((sum, o) => sum + 9 + o.lockingScript.toBinary().length, 0)) * MAX_FEE_SATS_PER_BYTE)
+// A partial withdrawal's miner fee at about 110 sat/kB of its size, paid from
+// the balance: one two-signature input (146-byte unlock), the pages read (if
+// any), the reader's return and the new balance.
+const withdrawalFee = (paysServer: boolean, balanceScript: LockingScript) => {
+  const output = (scriptBytes: number) => 9 + scriptBytes
+  const bytes = 10 + (32 + 4 + 3 + 146 + 4) + (paysServer ? output(25) : 0) + output(25) + output(balanceScript.toBinary().length)
+  return Math.ceil(bytes * 0.11)
+}
 /** Shown when a page payment could not reach the server; it is resent automatically. */
 export const OFFLINE_PAGE = 'Connection lost. Your page payment is saved and will be sent when you’re back online. You won’t be charged twice.'
 // One reading session per wallet identity, across every book.
@@ -156,7 +168,9 @@ export function createSessionClient(deps: SessionDeps) {
   // Release the funded new balance and switch to it. Repeatable after a reload.
   async function finishTopUp(record: SessionRecord) {
     const step = record.topUp!
-    if (step.stage === 'funded') {
+    // A top-up was built by the wallet (noSend), so the wallet sends it; a
+    // withdrawal was built here and is broadcast by the server on activation.
+    if (step.stage === 'funded' && !step.withdrawal) {
       const sent = await wallet.createAction({
         description: 'Send Pagereader balance top-up', options: { sendWith: [step.next.terms!.fundingTxid], acceptDelayedBroadcast: false },
       })
@@ -166,6 +180,14 @@ export function createSessionClient(deps: SessionDeps) {
       save({ ...record, topUp: { ...step, stage: 'sent' } })
     }
     await deps.authJson(api(record.edition, `channels/${step.childId}/activate`), 'POST', {})
+    const back = step.withdrawal
+    if (back)
+      await wallet.internalizeAction({
+        tx: Utils.toArray(back.beef, 'base64'), description: 'Pagereader reading session change', labels: ['pagestream channel'],
+        outputs: [{ outputIndex: back.vout, protocol: 'wallet payment', paymentRemittance: {
+          derivationPrefix: back.prefix, derivationSuffix: back.suffix, senderIdentityKey: record.serverIdentity,
+        } }],
+      })
     // The old balance is closed into the new one; it has no separate change to collect.
     markCollected(record.channelId)
     credit = undefined
@@ -363,13 +385,89 @@ export function createSessionClient(deps: SessionDeps) {
      * state once and returns the same page for a repeat.
      */
     retryPending(onAccepted?: (page: SessionPage, record: SessionRecord) => void) {
-      const run = async (): Promise<{ toppedUp?: SessionRecord; page?: SessionPage }> => {
-        let record = load(), toppedUp: SessionRecord | undefined
-        if (record?.topUp) record = toppedUp = await finishTopUp(record)
-        if (record?.state !== 'open' || !record.pending) return { toppedUp }
+      const run = async (): Promise<{ toppedUp?: SessionRecord; withdrew?: number; page?: SessionPage }> => {
+        let record = load(), toppedUp: SessionRecord | undefined, withdrew: number | undefined
+        if (record?.topUp) { withdrew = record.topUp.withdrawal?.sats; record = toppedUp = await finishTopUp(record) }
+        if (record?.state !== 'open' || !record.pending) return { toppedUp, withdrew }
         const page = await send(record, record.pending)
         onAccepted?.(page, load()!)
-        return { toppedUp, page }
+        return { toppedUp, withdrew, page }
+      }
+      const result = tail.then(run, run)
+      tail = result.catch(() => undefined)
+      return result
+    },
+
+    /**
+     * Withdraw part of the balance without any wallet approval: one transaction
+     * spends the current balance into the pages read (to the server), `amountSats`
+     * back to the reader's wallet, and a smaller new balance. Its miner fee comes
+     * out of the balance. Nothing is broadcast until the server has signed the
+     * refund for the new balance. To take everything out, use close().
+     */
+    withdraw(amountSats: number) {
+      const run = async (): Promise<SessionRecord> => {
+        const record = load()
+        if (record?.topUp) throw new SessionError('Your last balance change is still finishing. Try again in a moment.', true)
+        if (record?.state !== 'open' || !record.terms) throw new SessionError('There is no open reading balance to withdraw from.', false)
+        if (record.pending) throw new SessionError('A page payment is still being confirmed. Try again in a moment.', true)
+        if (!Number.isSafeInteger(amountSats) || amountSats < 1) throw new SessionError('Enter how many sats to withdraw.', false)
+        const parent = record.terms
+        const capacity = parent.capacity - record.paid - amountSats - withdrawalFee(record.paid > 0, fundingScript(parent.readerKey, parent.serverKey))
+        if (capacity < config.channel.minCapacitySats)
+          throw new SessionError('That would leave too little in your balance. Choose a smaller amount, or withdraw everything.', false)
+        const offer = await deps.authJson<Offer & { parent: { channelId: string; fundingTxid: string; fundingVout: number; paid: number; payoutScript: string; inputBeef: string } }>(
+          api(record.edition, `channels/${record.channelId}/withdraw`), 'POST', { capacity })
+        await checkOffer(offer, capacity)
+        if (offer.parent.channelId !== record.channelId || offer.parent.paid !== record.paid ||
+          offer.parent.fundingTxid !== parent.fundingTxid || offer.parent.fundingVout !== parent.fundingVout || offer.parent.payoutScript !== parent.serverScript)
+          throw new SessionError('Your balance changed on the server. Nothing was withdrawn; try again.', true)
+        const cancel = () => deps.authJson(api(record.edition, `channels/${offer.channelId}/topup/cancel`), 'POST', {}).catch(() => undefined)
+        let next: SessionRecord, withdrawal: NonNullable<NonNullable<SessionRecord['topUp']>['withdrawal']>
+        try {
+          const source = Transaction.fromAtomicBEEF(Utils.toArray(offer.parent.inputBeef, 'base64'))
+          if (source.id('hex') !== parent.fundingTxid) throw new SessionError('The server sent a different balance. Nothing was withdrawn.', false)
+          const returnPrefix = Utils.toBase64(Random(16)), returnSuffix = Utils.toBase64(Random(16))
+          const returnScript = await selfPaymentScript(wallet, returnPrefix, returnSuffix, offer.serverIdentity)
+          const readerPrefix = Utils.toBase64(Random(16)), readerSuffix = Utils.toBase64(Random(16))
+          const readerScript = await selfPaymentScript(wallet, readerPrefix, readerSuffix, offer.serverIdentity)
+          const balanceScript = fundingScript(offer.readerKey, offer.serverKey).toHex()
+          const tx = new Transaction(1, [{ sourceTransaction: source, sourceOutputIndex: parent.fundingVout, sequence: 0xffffffff, unlockingScript: new UnlockingScript() }], [
+            ...(record.paid > 0 ? [{ lockingScript: LockingScript.fromHex(parent.serverScript), satoshis: record.paid }] : []),
+            { lockingScript: LockingScript.fromHex(returnScript), satoshis: amountSats },
+            { lockingScript: LockingScript.fromHex(balanceScript), satoshis: capacity },
+          ])
+          const expect = { paid: record.paid, payoutScript: parent.serverScript, balanceScript, balanceSats: capacity }
+          const template = checkTopUp(parent, tx.toAtomicBEEF(), expect)
+          const readerSignature = await signChannelHash(wallet, parent, template.sighash, record.serverIdentity)
+          const { serverSignature } = await deps.authJson<{ serverSignature: string }>(api(record.edition, `channels/${offer.channelId}/topup/countersign`), 'POST',
+            { tx: Utils.toBase64(tx.toAtomicBEEF()), readerSignature: Utils.toBase64(readerSignature) })
+          const server = Utils.toArray(serverSignature, 'base64')
+          if (!verifyChannelHash(parent.serverKey, template.sighash, server)) throw new SessionError('The server signature was invalid. Nothing was withdrawn.', false)
+          tx.inputs[0].unlockingScript = channelUnlock(readerSignature, server)
+          if (!scriptValid(parent, tx, 0)) throw new SessionError('The withdrawal did not verify. Nothing was withdrawn.', false)
+          const signed = tx.toAtomicBEEF()
+          const final = checkTopUp(parent, signed, expect)
+          const terms = validateTerms({
+            channelId: offer.channelId, fundingTxid: final.txid, fundingVout: final.balanceVout, capacity,
+            readerKey: offer.readerKey, serverKey: offer.serverKey, readerScript, serverScript: offer.serverScript,
+            price: offer.price, settlementFee: offer.settlementFee, refundLockTime: offer.refundLockTime,
+          })
+          const zero = await signChannel(wallet, terms, stateTransaction(terms, 0), offer.serverIdentity)
+          const funded = await deps.authJson<{ terms: ChannelTerms; refundSignature: string }>(api(record.edition, `channels/${offer.channelId}/fund`), 'POST',
+            { fundingBeef: Utils.toBase64(signed), readerScript, signature: Utils.toBase64(zero), readerPrefix, readerSuffix })
+          if (JSON.stringify(funded.terms) !== JSON.stringify(terms) ||
+            !verifyChannel(terms, refundTransaction(terms), terms.serverKey, Utils.toArray(funded.refundSignature, 'base64')))
+            throw new SessionError('The server refund guarantee was invalid. Nothing was withdrawn.', false)
+          next = { identityKey, edition: record.edition, channelId: offer.channelId, serverIdentity: offer.serverIdentity, state: 'open',
+            terms, fundingFeeSats: networkFee(tx) ?? undefined, readerPrefix, readerSuffix, refundSignature: funded.refundSignature, paid: 0, openedAt: Date.now() }
+          withdrawal = { beef: Utils.toBase64(signed), vout: tx.outputs.findIndex(o => o.lockingScript.toHex() === returnScript),
+            prefix: returnPrefix, suffix: returnSuffix, sats: amountSats }
+        } catch (error) { await cancel(); throw error }
+        // The refund for the new balance is held: from here the withdrawal only goes forward.
+        const progressing = { ...record, topUp: { childId: offer.channelId, stage: 'funded' as const, next, withdrawal } }
+        save(progressing)
+        return finishTopUp(progressing)
       }
       const result = tail.then(run, run)
       tail = result.catch(() => undefined)

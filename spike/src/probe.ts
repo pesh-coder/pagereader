@@ -294,7 +294,7 @@ export function createProbe(options: {
         req.path !== "/.well-known/auth" &&
         !/^\/api\/receiver-latency\/[a-f0-9]{64}$/.test(req.path) &&
         !/^\/api\/(?:channel-pages|channels\/[a-f0-9]{32}\/close)$/.test(req.path) &&
-        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+|channels(?:\/[a-f0-9]{32}(?:\/fund|\/activate|\/topup(?:\/countersign|\/cancel)?)?)?)$/.test(
+        !/^\/api\/editions\/[^/]+\/(?:me|status\/\d+|owned\/\d+|recover\/\d+|bookmarks|pages\/\d+|channels(?:\/[a-f0-9]{32}(?:\/fund|\/activate|\/withdraw|\/topup(?:\/countersign|\/cancel)?)?)?)$/.test(
           req.path,
         )
       ) {
@@ -463,6 +463,14 @@ export function createProbe(options: {
       }
       try {
         res.json(await channels.topUpOffer(identity(req), String(req.params.channelId), req.body?.capacity));
+      } catch (error) {
+        channelFailure(res, error);
+      }
+    });
+    // Partial withdrawal: prepare the smaller balance; countersign/fund/activate are shared with top-ups.
+    app.post(paths("channels/:channelId/withdraw"), async (req, res) => {
+      try {
+        res.json(await channels.withdrawOffer(identity(req), String(req.params.channelId), req.body?.capacity));
       } catch (error) {
         channelFailure(res, error);
       }

@@ -12,6 +12,7 @@ export const balancePages = (sats: number) =>
   Math.max(0, Math.floor((sats - 60 - config.channel.settlementFeeSats) / config.priceSats / 10) * 10)
 const OFFLINE_REQUEST = 'Connection lost. Nothing was paid twice; try again when you’re back online.'
 const OFFLINE_TOP_UP = 'Connection lost while finishing your top-up. It is saved and will finish when you’re back online. You won’t be charged twice.'
+const OFFLINE_WITHDRAWAL = 'Connection lost while finishing your withdrawal. It is saved and will finish when you’re back online.'
 // A request the browser could not complete at all (no answer from the server).
 const offlineError = (error: unknown) =>
   error instanceof TypeError || /network error|failed to fetch|networkerror|load failed/i.test(error instanceof Error ? error.message : String(error))
@@ -99,6 +100,8 @@ export interface ReaderGateway {
   sessionMaxSats?(): number | null
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(): Promise<SessionStatus | null>
+  /** Send `amountSats` of the balance back to the wallet; the rest stays (no wallet approval). */
+  withdrawSession?(amountSats: number): Promise<SessionStatus | null>
   /** Add `addSats` from the wallet to the open balance (one approval). */
   topUpSession?(addSats: number): Promise<SessionStatus | null>
   recheckSession?(): Promise<SessionStatus | null>
@@ -278,10 +281,12 @@ export function createReaderGateway(
     if (!client || !selectedWallet || !client.hasPending()) return
     if (retryTimer !== undefined) { clearTimeout(retryTimer); retryTimer = undefined }
     try {
-      const { toppedUp } = await client.retryPending(acceptFor(selectedWallet, sessionRevision))
+      const { toppedUp, withdrew } = await client.retryPending(acceptFor(selectedWallet, sessionRevision))
       retryAttempt = 0
       sessionError = undefined
-      if (toppedUp) sessionNotice = `Reading balance topped up: ${client.remaining(toppedUp)} sats available.`
+      if (toppedUp) sessionNotice = withdrew
+        ? `Withdrawn: ${withdrew} sats returned to your wallet. ${client.remaining(toppedUp)} sats left in your reading balance.`
+        : `Reading balance topped up: ${client.remaining(toppedUp)} sats available.`
     } catch (error) {
       const failure = error as { retryable?: boolean; offline?: boolean }
       if (failure.retryable || failure.offline) scheduleRetry()
@@ -675,6 +680,25 @@ export function createReaderGateway(
       }
       return gateway.sessionStatus!()
     },
+    async withdrawSession(amountSats) {
+      if (!session) return null
+      sessionError = undefined
+      try {
+        const next = await session.withdraw(amountSats)
+        sessionNotice = `Withdrawn: ${amountSats} sats returned to your wallet. ${session.remaining(next)} sats left in your reading balance.`
+      } catch (error) {
+        // Signed and refund held, but the last step lost its connection: it finishes on its own.
+        if ((error as { offline?: boolean }).offline && session.load()?.topUp) {
+          sessionError = OFFLINE_WITHDRAWAL
+          scheduleRetry()
+          return gateway.sessionStatus!()
+        }
+        throw asReaderError(error, 'The withdrawal could not finish. Your balance is unchanged.')
+      } finally {
+        changed()
+      }
+      return gateway.sessionStatus!()
+    },
     sessionNotice: () => sessionNotice ?? null,
     async recheckSession() {
       sessionError = undefined
@@ -1002,6 +1026,7 @@ export function createReaderGateway(
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
     endSession: () => exclusive(() => gateway.endSession!()),
     topUpSession: addSats => exclusive(() => gateway.topUpSession!(addSats)),
+    withdrawSession: amountSats => exclusive(() => gateway.withdrawSession!(amountSats)),
     recheckSession: () => exclusive(() => gateway.recheckSession!()),
   }
 }

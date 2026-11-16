@@ -128,6 +128,26 @@ export function createChannelService(options: {
       } }
     },
 
+    /**
+     * Prepare a smaller new balance for a partial withdrawal. The same move as a
+     * top-up (countersign, fund, activate), but funded only by the current
+     * balance: one extra output returns the chosen sats to the reader's wallet.
+     */
+    async withdrawOffer(identity: string, parentId: string, requested?: unknown) {
+      const parent = row(parentId)
+      if (!parent || parent.identity !== identity) throw new ChannelError(404, 'Reading session not found')
+      if (parent.state !== 'open') throw new ChannelError(409, 'Only an open reading balance can be withdrawn from')
+      const parentTerms = termsOf(parent), capacity = requested
+      if (typeof capacity !== 'number' || !Number.isSafeInteger(capacity) || capacity < config.channel.minCapacitySats)
+        throw new ChannelError(400, 'Too little would be left; withdraw everything instead')
+      if (capacity >= parentTerms.capacity - parent.paid) throw new ChannelError(400, 'A withdrawal must leave a smaller balance')
+      const offer = await createOffer(identity, parent.edition, capacity, parent.id)
+      return { ...offer, parent: {
+        channelId: parent.id, fundingTxid: parentTerms.fundingTxid, fundingVout: parentTerms.fundingVout,
+        paid: parent.paid, payoutScript: parentTerms.serverScript, inputBeef: parent.funding_beef,
+      } }
+    },
+
     /** Check the reader's top-up transaction and countersign the current balance it spends. */
     async countersignTopUp(identity: string, childId: string, body: { tx?: unknown; readerSignature?: unknown }) {
       const child = row(childId)

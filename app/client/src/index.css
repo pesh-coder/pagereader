@@ -854,6 +854,26 @@ h1,
   border: 0;
   border-top: 1px solid var(--rule);
 }
+/* Amount boxes in the Top up and Withdraw panels. 16px text avoids phone zoom. */
+dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+dialog form label {
+  font-weight: 600;
+}
+dialog form input[type='number'] {
+  font: inherit;
+  font-size: 16px;
+  min-height: 44px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
 .how-it-works {
   margin: 28px 0 0;
   padding-top: 16px;
