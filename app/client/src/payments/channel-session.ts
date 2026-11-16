@@ -87,6 +87,10 @@ const notEnough = (error: unknown, message: string, budget: number) => {
 }
 
 const MAX_FUNDING_FEE_SATS = 60
+// A top-up also spends the old balance (a 146-byte two-signature input) and
+// pays for pages read, so at 100 sat/kB its fee is ~65 sats, above the opening
+// limit. The new balance's size is unchanged; only the fee check is wider.
+const MAX_TOP_UP_FEE_SATS = 100
 // One reading session per wallet identity, across every book.
 const keyFor = (identity: string) => `pagestream-session-v2:${identity}`
 // Sessions whose change this wallet already received (any device may collect).
@@ -303,7 +307,7 @@ export function createSessionClient(deps: SessionDeps) {
         try {
           const template = checkTopUp(parent, signable.tx, expect)
           fee = networkFee(Transaction.fromAtomicBEEF(signable.tx)) ?? -1
-          if (fee < 0 || fee > MAX_FUNDING_FEE_SATS) throw new SessionError(`Top-up miner fee ${fee < 0 ? 'unknown' : fee} exceeds ${MAX_FUNDING_FEE_SATS} sats. Nothing was sent.`, false)
+          if (fee < 0 || fee > MAX_TOP_UP_FEE_SATS) throw new SessionError(`Top-up miner fee ${fee < 0 ? 'unknown' : fee} exceeds ${MAX_TOP_UP_FEE_SATS} sats. Nothing was sent.`, false)
           const readerSignature = await signChannelHash(wallet, parent, template.sighash, record.serverIdentity)
           const { serverSignature } = await deps.authJson<{ serverSignature: string }>(api(record.edition, `channels/${offer.channelId}/topup/countersign`), 'POST',
             { tx: Utils.toBase64(signable.tx), readerSignature: Utils.toBase64(readerSignature) })

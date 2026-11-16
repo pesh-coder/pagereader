@@ -315,6 +315,18 @@ test('top-up: one approval moves the balance and new sats into a full new balanc
   assert.equal(h.channels.row(next.channelId)!.paid, 5)
 })
 
+test('a top-up accepts its larger miner fee (64 sats seen on a phone) and refuses an excessive one', async t => {
+  const h = await harness(t)
+  const parent = await h.session.open(h.edition.id, 160)
+  for (const page of [3, 4, 5]) await h.session.pay(h.edition.id, page)
+  h.reader.setFee(101)
+  await assert.rejects(h.session.topUp(260), /Top-up miner fee 101 exceeds 100 sats/)
+  assert.equal(h.session.load()!.channelId, parent.channelId, 'the old balance is kept')
+  h.reader.setFee(64)
+  const next = await h.session.topUp(260)
+  assert.equal(next.state, 'open'); assert.equal(next.fundingFeeSats, 64)
+})
+
 test('top-up the wallet refuses changes nothing: the balance reopens for reading', async t => {
   const h = await harness(t)
   const parent = await h.session.open(h.edition.id, 160)

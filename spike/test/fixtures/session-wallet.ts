@@ -12,7 +12,7 @@ export function readerWallet(keyOrHex: PrivateKey | string = PrivateKey.fromRand
   const calls: string[] = [], internalized: unknown[] = [], created: Parameters<WalletInterface['createAction']>[0][] = []
   let pending: Transaction | undefined
   let fundingSats = 0
-  const FEE = 25
+  let fee = 25
   const wallet = {
     getPublicKey: proto.getPublicKey.bind(proto), createSignature: proto.createSignature.bind(proto),
     async createAction(args: Parameters<WalletInterface['createAction']>[0]) {
@@ -32,7 +32,7 @@ export function readerWallet(keyOrHex: PrivateKey | string = PrivateKey.fromRand
       const appIn = appInputs.reduce((sum, input) => sum + input.sourceTransaction.outputs[input.sourceOutputIndex].satoshis!, 0)
       const outputs = args.outputs!.map(output => ({ satoshis: output.satoshis, lockingScript: LockingScript.fromHex(output.lockingScript) }))
       const out = outputs.reduce((sum, output) => sum + output.satoshis, 0)
-      fundingSats = out - appIn + FEE
+      fundingSats = out - appIn + fee
       pending = new Transaction(1, [...appInputs, { sourceTransaction: funding, sourceOutputIndex: 0, sequence: 0xffffffff, unlockingScriptTemplate: new P2PKH().unlock(coin) }],
         [...outputs, { satoshis: 100_000 - fundingSats, lockingScript: new P2PKH().lock(coin.toAddress()) }])
       if (!appInputs.length) await pending.sign()
@@ -52,5 +52,7 @@ export function readerWallet(keyOrHex: PrivateKey | string = PrivateKey.fromRand
   }
   return { wallet: wallet as unknown as SessionWallet, proto, calls, internalized, created, identity: key.toPublicKey().toString(),
     /** Sats the wallet itself contributed to its last action (fee included). */
-    lastFundingSats: () => fundingSats }
+    lastFundingSats: () => fundingSats,
+    /** Miner fee the wallet adds to its next action. */
+    setFee: (sats: number) => { fee = sats } }
 }
