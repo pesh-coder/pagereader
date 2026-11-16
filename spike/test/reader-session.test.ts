@@ -226,3 +226,67 @@ test('a saved balance is never shown as usable until the server confirms it, and
   assert.equal((await second.recheckSession!())?.state, 'open')
   assert.equal(second.sessionStatus!()?.error, undefined)
 })
+
+test('after a lost connection, a kept page payment and an interrupted top-up finish on their own', async t => {
+  const store = new Store(':memory:'), catalogue = loadCatalogue(), edition = catalogue[0].edition
+  const serverProto = new ProtoWallet(PrivateKey.fromRandom())
+  const serverIdentity = (await serverProto.getPublicKey({ identityKey: true })).publicKey
+  const serverWallet = new Proxy(serverProto, { get(target, name) {
+    if (name === 'internalizeAction') return async () => ({ accepted: true })
+    const value = Reflect.get(target, name)
+    return typeof value === 'function' ? value.bind(target) : value
+  } }) as unknown as WalletInterface
+  const server = http.createServer(createProbe({ store, edition, catalogue, wallet: serverWallet, serverIdentity,
+    purchasesPaused: () => false, research: false, channels: { broadcast: async () => {}, enabled: () => true } }))
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const values = new Map<string, string>()
+  const descriptors = ['localStorage', 'location', 'fetch'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)
+  const realFetch = globalThis.fetch
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true,
+    value: (input: string | URL | Request, init?: RequestInit) => realFetch(typeof input === 'string' && input.startsWith('/') ? origin + input : input, init) })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } } })
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } })
+  t.after(() => {
+    for (const [key, descriptor] of descriptors) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key)
+    server.closeAllConnections(); server.close(); store.close()
+  })
+  const reader = readerWallet()
+  // The phone's connection to Pagereader drops: page payments, or the top-up's last step.
+  let pagesDown = false, activateDown = false
+  const auth = new AuthFetch(reader.proto as unknown as WalletInterface)
+  const gateway = createReaderGateway(() => {}, async () => ({
+    identityKey: reader.identity, version: 'fixture', network: 'mainnet', sessionWallet: reader.wallet,
+    auth: { fetch: (url: string, init?: RequestInit) => activateDown && url.endsWith('/activate')
+      ? Promise.reject(new Error('Network error while sending authenticated request: Failed to fetch'))
+      : auth.fetch(url, init as never) },
+    sessionPost: (path: string, body: unknown) => pagesDown ? Promise.reject(new TypeError('Failed to fetch'))
+      : fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    getAttempt: () => undefined, confirmPayment: () => {}, retainPaymentAncestors: () => {}, paymentFee: () => null,
+  } as unknown as Awaited<ReturnType<Open>>))
+  const book: Book = { id: 'holmes', gid: 1661, title: edition.title, author: edition.author, mode: 'reader', editionId: edition.id, pages: edition.pages.length, sourceUrl: '' }
+  const until = async (done: () => boolean) => { for (let i = 0; i < 100 && !done(); i++) await new Promise(r => setTimeout(r, 100)); return done() }
+  await gateway.library(); await gateway.connect(book)
+  await gateway.openSession!(book, 160)
+  await gateway.page(book, 3)
+  // Page 4 shows at once (credit); its payment cannot reach the server.
+  pagesDown = true
+  await gateway.page(book, 4)
+  assert.equal(await until(() => /^Connection lost\. Your page payment is saved/.test(gateway.sessionStatus!()?.error ?? '')), true)
+  // Back online: the kept payment is sent on its own, with no new signature or wallet action.
+  pagesDown = false
+  assert.equal(await until(() => gateway.receipts().find(r => r.page === 4)?.state === 'confirmed'), true, 'the kept payment was resent')
+  assert.equal(gateway.sessionStatus!()?.error, undefined)
+  assert.deepEqual(store.purchases(reader.identity, edition.id).map(p => p.page).sort(), [3, 4])
+  for (const page of [5, 6, 7, 8]) await gateway.page(book, page)
+  // Top up: approved and signed, then the last step loses its connection.
+  activateDown = true
+  const during = await gateway.topUpSession!(260)
+  assert.match(during?.error ?? '', /^Connection lost while finishing your top-up\. It is saved/)
+  activateDown = false
+  assert.equal(await until(() => gateway.sessionStatus!()?.capacity === 200), true, 'the top-up finished on its own')
+  assert.equal(gateway.sessionStatus!()?.error, undefined)
+  assert.match(gateway.sessionNotice!() ?? '', /^Reading balance topped up: \d+ sats available\.$/)
+  assert.deepEqual(reader.calls, ['createAction', 'signAction', 'sendWith', 'createAction', 'signAction', 'sendWith'], 'one approval each, nothing repeated')
+})

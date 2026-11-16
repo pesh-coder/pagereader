@@ -10,6 +10,11 @@ export type { Spend }
  * (at most 60, as in channel-session) and settling fees; rounded down to tens. */
 export const balancePages = (sats: number) =>
   Math.max(0, Math.floor((sats - 60 - config.channel.settlementFeeSats) / config.priceSats / 10) * 10)
+const OFFLINE_REQUEST = 'Connection lost. Nothing was paid twice; try again when you’re back online.'
+const OFFLINE_TOP_UP = 'Connection lost while finishing your top-up. It is saved and will finish when you’re back online. You won’t be charged twice.'
+// A request the browser could not complete at all (no answer from the server).
+const offlineError = (error: unknown) =>
+  error instanceof TypeError || /network error|failed to fetch|networkerror|load failed/i.test(error instanceof Error ? error.message : String(error))
 export interface Book {
   id: string
   gid: number
@@ -196,10 +201,17 @@ export function createReaderGateway(
       session = createSessionClient({
         wallet: selected.sessionWallet, identityKey: selected.identityKey, storage: localStorage, post: selected.sessionPost,
         authJson: async <T>(path: string, method: string, body?: unknown) => {
-          const response = await selected.auth.fetch(location.origin + path, {
-            method, paymentRetryAttempts: 1,
-            ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
-          })
+          let response: Response
+          try {
+            response = await selected.auth.fetch(location.origin + path, {
+              method, paymentRetryAttempts: 1,
+              ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+            })
+          } catch (error) {
+            // The browser never got an answer (phone network drop): say so plainly.
+            if (offlineError(error)) throw Object.assign(new ReaderError(OFFLINE_REQUEST, 'retry'), { offline: true })
+            throw error
+          }
           const result = await response.json().catch(() => ({}))
           if (!response.ok) throw new ReaderError(result.error ?? 'The reading session request failed. Nothing new was paid.', 'check')
           return result as T
@@ -241,18 +253,45 @@ export function createReaderGateway(
     if (client && list?.length && serverIdentity)
       void client.collectSettled(list, serverIdentity).then(sats => { if (sats) { returned(sats); changed() } }, () => undefined)
   }
+  // Records an accepted session page for the wallet that signed it.
+  const acceptFor = (selectedWallet: NonNullable<typeof wallet>, revision: number) => (body: SessionPage) => {
+    if (wallet !== selectedWallet || sessionRevision !== revision) return
+    const existing = loadSpends().get(body.purchase.txid)
+    // The accepted page may be an earlier one from another book in this session.
+    saveSpend({ ...existing, ...body.purchase, identityKey: selectedWallet.identityKey, edition: body.editionId, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
+    if (me && edition === body.editionId)
+      me.purchases = [...me.purchases.filter(p => p.page !== body.purchase.page), body.purchase]
+    try { observer?.paid?.(body.purchase.txid) } catch { /* Diagnostics cannot interrupt payments. */ }
+  }
+  // After a lost connection, finish an interrupted top-up and resend a kept page
+  // payment on their own: soon, then less often, and at once when the browser
+  // reports it is back online. No new signature or wallet prompt is involved.
+  const retryDelaysMs = [3000, 5000, 10000, 20000, 30000]
+  let retryTimer: ReturnType<typeof setTimeout> | undefined, retryAttempt = 0
+  const scheduleRetry = () => {
+    if (retryTimer !== undefined) return
+    retryTimer = setTimeout(() => { retryTimer = undefined; void retryPending() }, retryDelaysMs[Math.min(retryAttempt++, retryDelaysMs.length - 1)])
+  }
+  const retryPending = async () => {
+    const client = session, selectedWallet = wallet
+    if (!client || !selectedWallet || !client.hasPending()) return
+    if (retryTimer !== undefined) { clearTimeout(retryTimer); retryTimer = undefined }
+    try {
+      const { toppedUp } = await client.retryPending(acceptFor(selectedWallet, sessionRevision))
+      retryAttempt = 0
+      sessionError = undefined
+      if (toppedUp) sessionNotice = `Reading balance topped up: ${client.remaining(toppedUp)} sats available.`
+    } catch (error) {
+      const failure = error as { retryable?: boolean; offline?: boolean }
+      if (failure.retryable || failure.offline) scheduleRetry()
+      else sessionError = error instanceof Error ? error.message : 'The saved payment could not be sent.'
+    } finally { changed() }
+  }
+  if (typeof window !== 'undefined') window.addEventListener('online', () => { retryAttempt = 0; void retryPending() })
   const sessionPage = async (book: Book, page: number): Promise<ReaderPage> => {
-    const client = session!, selectedWallet = wallet!, revision = sessionRevision, selectedEdition = edition
+    const client = session!, selectedWallet = wallet!, selectedEdition = edition
     const identityKey = selectedWallet.identityKey
-    const accept = (body: SessionPage) => {
-      if (wallet !== selectedWallet || sessionRevision !== revision) return
-      const existing = loadSpends().get(body.purchase.txid)
-      // The accepted page may be an earlier one from another book in this session.
-      saveSpend({ ...existing, ...body.purchase, identityKey, edition: body.editionId, feeSats: body.purchase.feeSats ?? 0, state: 'confirmed' })
-      if (me && edition === body.editionId)
-        me.purchases = [...me.purchases.filter(p => p.page !== body.purchase.page), body.purchase]
-      try { observer?.paid?.(body.purchase.txid) } catch { /* Diagnostics cannot interrupt payments. */ }
-    }
+    const accept = acceptFor(selectedWallet, sessionRevision)
     await client.idle()
     const record = client.load()!
     const credited = record.pending ? undefined : client.takeCredit(selectedEdition, page)
@@ -271,6 +310,7 @@ export function createReaderGateway(
           if ((error as { retryable?: boolean }).retryable) saveSpend({ ...spend, state: 'unresolved' })
           else dropSpend(purchase.txid)
         }
+        if ((error as { retryable?: boolean }).retryable) scheduleRetry()
         changed()
       })
       return checkPage({ editionId: selectedEdition, page, paragraphs: credited.paragraphs, purchase }, book, page)
@@ -621,6 +661,13 @@ export function createReaderGateway(
       try {
         await session.topUp(budget)
       } catch (error) {
+        // Approved and signed, but the last step lost its connection: it is saved
+        // and finishes on its own, so report that instead of a failure.
+        if ((error as { offline?: boolean }).offline && session.load()?.topUp) {
+          sessionError = OFFLINE_TOP_UP
+          scheduleRetry()
+          return gateway.sessionStatus!()
+        }
         throw asReaderError(error, 'The top-up could not finish. Nothing was taken from your wallet.')
       } finally {
         changed()
@@ -718,6 +765,8 @@ export function createReaderGateway(
             void session?.receiveChange().then(receivedChange, () => undefined)
             throw Object.assign(new ReaderError('Your reading balance has ended, so this page was not charged. Approve a new balance to keep reading.', 'retry'), { needsSession: true })
           }
+          // A payment that never reached the server is kept; send it once back online.
+          if ((error as { retryable?: boolean }).retryable) scheduleRetry()
           throw new ReaderError(error instanceof Error ? error.message : 'The session page could not be paid.', 'retry')
         } finally { changed() }
       }

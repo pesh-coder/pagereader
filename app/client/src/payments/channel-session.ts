@@ -87,6 +87,8 @@ const notEnough = (error: unknown, message: string, budget: number) => {
 }
 
 const MAX_FUNDING_FEE_SATS = 60
+/** Shown when a page payment could not reach the server; it is resent automatically. */
+export const OFFLINE_PAGE = 'Connection lost. Your page payment is saved and will be sent when you’re back online. You won’t be charged twice.'
 // A top-up also spends the old balance (a 146-byte two-signature input) and
 // pays for pages read, so at 100 sat/kB its fee is ~65 sats, above the opening
 // limit. The new balance's size is unchanged; only the fee check is wider.
@@ -342,6 +344,28 @@ export function createSessionClient(deps: SessionDeps) {
       return result
     },
 
+    /** Something interrupted by a lost connection is waiting: a top-up or a signed page payment. */
+    hasPending() { const record = load(); return Boolean(record?.topUp || (record?.state === 'open' && record.pending)) },
+
+    /**
+     * Finish an interrupted top-up and resend a kept page payment, without a new
+     * signature or wallet prompt. Both are safe to repeat: the server accepts each
+     * state once and returns the same page for a repeat.
+     */
+    retryPending(onAccepted?: (page: SessionPage, record: SessionRecord) => void) {
+      const run = async (): Promise<{ toppedUp?: SessionRecord; page?: SessionPage }> => {
+        let record = load(), toppedUp: SessionRecord | undefined
+        if (record?.topUp) record = toppedUp = await finishTopUp(record)
+        if (record?.state !== 'open' || !record.pending) return { toppedUp }
+        const page = await send(record, record.pending)
+        onAccepted?.(page, load()!)
+        return { toppedUp, page }
+      }
+      const result = tail.then(run, run)
+      tail = result.catch(() => undefined)
+      return result
+    },
+
     /** A page already delivered on credit, if it is the one requested. */
     takeCredit(edition: string, page: number) {
       if (credit?.editionId !== edition || credit.page !== page) return undefined
@@ -472,7 +496,7 @@ export function createSessionClient(deps: SessionDeps) {
         channelId: record.channelId, editionId: pending.edition, page: pending.page, paid: pending.paid, signature: pending.signature,
       })
     } catch {
-      throw new SessionError('The page payment did not reach the server. It is kept and will be resent; no second payment is made.', true)
+      throw new SessionError(OFFLINE_PAGE, true)
     }
     const body = await response.json().catch(() => ({})) as SessionPage & { error?: string; code?: string; channel?: { paid: number } }
     if (body.code === 'SESSION_CLOSED') {

@@ -340,7 +340,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     setShortfall(null)
     try {
       const status = await gateway.topUpSession(budget)
-      setSessionMessage(status ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
+      // A top-up still finishing after a lost connection reports through the balance bar.
+      setSessionMessage(status && !status.error ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
         setShortfall({ kind: 'topup', attempted: budget, affordableBudget: failure.insufficientFunds.affordableBudget, detail: failure.message })
