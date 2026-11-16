@@ -12,7 +12,8 @@ export function WalletMenu({
   version: string | null
   busy: boolean
   connect: () => void
-  timings: () => void
+  /** Developer timing capture; omitted for readers. */
+  timings?: () => void
   disconnect: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -85,7 +86,7 @@ export function WalletMenu({
           </button>
           {version && <p className="subtle">Wallet version: {version}</p>}
           <p role="status">{message}</p>
-          <button onClick={() => { setOpen(false); timings() }}>Reading timings</button>
+          {timings && <button onClick={() => { setOpen(false); timings() }}>Reading timings</button>}
           <hr />
           <button
             disabled={busy}

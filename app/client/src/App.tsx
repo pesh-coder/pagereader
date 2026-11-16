@@ -23,6 +23,7 @@ import { SpendingPanel } from './reader/components/SpendingPanel'
 export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderGateway } = {}) {
   const [, invalidate] = useState(0)
   const [timings] = useState(() => new ReadingTimings(localStorage))
+  const [showTimings] = useState(() => new URLSearchParams(location.search).has('timings'))
   const [gateway] = useState(() =>
     gatewayFactory?.() ?? createReaderGateway(() => invalidate((n) => n + 1), undefined, {
       wallet: call => timings.wallet(call), http: call => timings.http(call),
@@ -428,7 +429,8 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               Aa
             </button>
             <WalletMenu
-              timings={() => setPanel('timings')}
+              // Developer tool: open the reader with ?timings to measure page turns.
+              timings={showTimings ? () => setPanel('timings') : undefined}
               identity={gateway.identity()}
               version={gateway.walletVersion()}
               busy={busy}

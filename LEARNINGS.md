@@ -170,7 +170,7 @@ These cost real time or the owner's money during the POC:
 - **TypeScript 6 broke the scaffold's typing**; it is pinned to 5.8.3. [Package findings](spike/evidence/package-facts.md).
 - **Hosting:** Vercel serves the reader and forwards `/api` to the Express + SQLite server on Railway (EU West), so the wallet sees one address (`pagereader.vercel.app`) for all permissions. [Hosting guide](deploy/vercel-railway.md).
 - **Tests:** `cd spike && npm test` (156 tests). Builds: `npm run build` in `spike` and `app/client`.
-- **The in-app timing capture** (Start capture → read 20+ pages → Stop → Download JSON) records every page's visible time, signature time and server confirmation time.
+- **The in-app timing capture** records every page's visible time, signature time and server confirmation time. It is hidden from readers: open the reader with `?timings` (for example `https://pagereader.vercel.app/reader/?timings`), connect the wallet, then wallet menu → Reading timings → Start capture → read 20+ pages → Stop → Download JSON.
 
 ---
 
