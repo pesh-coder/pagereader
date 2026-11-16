@@ -34,9 +34,10 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const [book, setBook] = useState<Book | null>(null)
   const [page, setPage] = useState<ReaderPage | null>(null)
   const [panel, setPanel] = useState<
-    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | 'timings' | null
+    'contents' | 'appearance' | 'spent' | 'purchase' | 'wallet' | 'timings' | 'topup' | null
   >(null)
   const [target, setTarget] = useState(3)
+  const [topUpSats, setTopUpSats] = useState(String(config.channel.minTopUpSats))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [paymentDetails, setPaymentDetails] = useState<string[]>([])
@@ -333,19 +334,20 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
     }
     void turn(book, target)
   }
-  async function topUp(budget = sessionSats) {
+  async function topUp(addSats: number) {
     if (!book || busy || lock.current || !gateway.topUpSession) return
+    setPanel(null)
     lock.current = true
     setBusy(true)
     setSessionMessage('')
     setShortfall(null)
     try {
-      const status = await gateway.topUpSession(budget)
+      const status = await gateway.topUpSession(addSats)
       // A top-up still finishing after a lost connection reports through the balance bar.
       setSessionMessage(status && !status.error ? `Reading balance topped up: ${status.remainingSats} sats available.` : '')
     } catch (failure) {
       if (failure instanceof ReaderError && failure.insufficientFunds) {
-        setShortfall({ kind: 'topup', attempted: budget, affordableBudget: failure.insufficientFunds.affordableBudget, detail: failure.message })
+        setShortfall({ kind: 'topup', attempted: addSats, affordableBudget: failure.insufficientFunds.affordableBudget, detail: failure.message })
         return
       }
       setSessionMessage(failure instanceof Error ? failure.message : 'The top-up could not finish. Nothing was taken from your wallet.')
@@ -380,6 +382,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
   const sessionOpen = session?.state === 'open'
   // The server may set a lower session ceiling.
   const sessionSats = Math.min(gateway.sessionMaxSats?.() ?? config.channel.capacitySats, config.channel.capacitySats)
+  // A top-up can bring the balance back up to the full session amount at most.
+  const maxTopUp = session ? Math.max(0, sessionSats - (session.capacity - session.paidSats)) : 0
+  const topUpValid = /^\d+$/.test(topUpSats) && Number(topUpSats) >= config.channel.minTopUpSats && Number(topUpSats) <= maxTopUp
   const notice = gateway.sessionNotice?.() ?? null
   const receipts = book?.mode === 'reader' ? gateway.receipts() : []
   const spending = summarizeSpending(receipts)
@@ -491,9 +496,9 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
             )}
             {session.state === 'open' && (
               <>
-                {/* Top up refills the balance to the session amount in one wallet approval. */}
-                {session.remainingSats < session.capacity - config.channel.settlementFeeSats - 4 * config.priceSats && (
-                  <button className="quiet" disabled={busy} onClick={() => void topUp()}>Top up</button>
+                {/* Top up adds an amount the reader chooses, in one wallet approval. */}
+                {maxTopUp >= config.channel.minTopUpSats && (
+                  <button className="quiet" disabled={busy} onClick={() => setPanel('topup')}>Top up</button>
                 )}
                 <button className="quiet" disabled={busy} onClick={() => void endSession()}>Withdraw</button>
               </>
@@ -837,6 +842,25 @@ export default function App({ gatewayFactory }: { gatewayFactory?: () => ReaderG
               )}
             </section>
           )}
+        </Panel>
+      )}
+      {panel === 'topup' && session?.state === 'open' && (
+        <Panel title="Top up your reading balance" close={close}>
+          <form onSubmit={event => { event.preventDefault(); if (topUpValid) void topUp(Number(topUpSats)) }}>
+            <label htmlFor="topup-sats">How many sats do you want to add?</label>
+            <input id="topup-sats" type="number" inputMode="numeric" min={config.channel.minTopUpSats} max={maxTopUp} step={1}
+              value={topUpSats} onChange={event => setTopUpSats(event.target.value)} />
+            <p className="subtle">
+              Between {config.channel.minTopUpSats} and {maxTopUp} sats (about {Math.floor(maxTopUp / config.priceSats)} pages).
+              Your wallet adds this plus a small miner fee and asks you to approve once.
+            </p>
+            <button className="wide" type="button" disabled={busy} onClick={() => setTopUpSats(String(maxTopUp))}>
+              Fill up to {sessionSats} sats ({maxTopUp} sats)
+            </button>
+            <button className="paid-action wide" type="submit" disabled={busy || !topUpValid}>
+              {topUpValid ? `Add ${Number(topUpSats)} sats` : `Enter ${config.channel.minTopUpSats}–${maxTopUp} sats`}
+            </button>
+          </form>
         </Panel>
       )}
       {panel === 'spent' && (

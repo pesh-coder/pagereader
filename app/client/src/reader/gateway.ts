@@ -99,7 +99,8 @@ export interface ReaderGateway {
   sessionMaxSats?(): number | null
   openSession?(book: Book, capacity: number, firstPage?: number): Promise<void>
   endSession?(): Promise<SessionStatus | null>
-  topUpSession?(budget: number): Promise<SessionStatus | null>
+  /** Add `addSats` from the wallet to the open balance (one approval). */
+  topUpSession?(addSats: number): Promise<SessionStatus | null>
   recheckSession?(): Promise<SessionStatus | null>
   /** Latest "sats returned to your wallet" message, if any. */
   sessionNotice?(): string | null
@@ -655,11 +656,11 @@ export function createReaderGateway(
         changed()
       }
     },
-    async topUpSession(budget) {
+    async topUpSession(addSats) {
       if (!session) return null
       sessionError = undefined
       try {
-        await session.topUp(budget)
+        await session.topUp(addSats)
       } catch (error) {
         // Approved and signed, but the last step lost its connection: it is saved
         // and finishes on its own, so report that instead of a failure.
@@ -1000,7 +1001,7 @@ export function createReaderGateway(
     page: (...args) => exclusive(() => gateway.page(...args)),
     openSession: (...args) => exclusive(() => gateway.openSession!(...args)),
     endSession: () => exclusive(() => gateway.endSession!()),
-    topUpSession: budget => exclusive(() => gateway.topUpSession!(budget)),
+    topUpSession: addSats => exclusive(() => gateway.topUpSession!(addSats)),
     recheckSession: () => exclusive(() => gateway.recheckSession!()),
   }
 }

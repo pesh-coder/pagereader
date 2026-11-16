@@ -86,13 +86,19 @@ const notEnough = (error: unknown, message: string, budget: number) => {
   return Object.assign(new SessionError(`${message} Wallet: ${walletWords(error)}.`, false), { insufficientFunds: found })
 }
 
-const MAX_FUNDING_FEE_SATS = 60
+// Part of an opening budget set aside for its miner fee (usually ~42 sats), so
+// the locked amount plus the fee stays within what the reader approved.
+const FUNDING_FEE_RESERVE_SATS = 60
+// Miner fees are not capped at a fixed amount: they depend on the transaction's
+// size. This only refuses a fee above 5x the wallets' usual 100 sat/kB, which
+// would mean a broken fee setting (spending within the monthly allowance is
+// approved by the wallet without a prompt, so this check is the reader's guard).
+const MAX_FEE_SATS_PER_BYTE = 0.5
+// Generous size estimate before signing: every input counted at 150 bytes.
+const feeLimit = (tx: Transaction) =>
+  Math.ceil((10 + tx.inputs.length * 150 + tx.outputs.reduce((sum, o) => sum + 9 + o.lockingScript.toBinary().length, 0)) * MAX_FEE_SATS_PER_BYTE)
 /** Shown when a page payment could not reach the server; it is resent automatically. */
 export const OFFLINE_PAGE = 'Connection lost. Your page payment is saved and will be sent when you’re back online. You won’t be charged twice.'
-// A top-up also spends the old balance (a 146-byte two-signature input) and
-// pays for pages read, so at 100 sat/kB its fee is ~65 sats, above the opening
-// limit. The new balance's size is unchanged; only the fee check is wider.
-const MAX_TOP_UP_FEE_SATS = 100
 // One reading session per wallet identity, across every book.
 const keyFor = (identity: string) => `pagestream-session-v2:${identity}`
 // Sessions whose change this wallet already received (any device may collect).
@@ -179,12 +185,12 @@ export function createSessionClient(deps: SessionDeps) {
 
     /**
      * One wallet approval for a total `budget`, miner fees included: the session
-     * locks budget − MAX_FUNDING_FEE_SATS, so the locked amount plus the opening
-     * fee never exceeds the budget. The settling fee comes out of the locked sats.
+     * locks budget − FUNDING_FEE_RESERVE_SATS, so the locked amount plus the usual
+     * opening fee stays within the budget. The settling fee comes out of the locked sats.
      * The refund is held before anything is sent.
      */
     async open(edition: string, budget: number = config.channel.capacitySats, firstPage?: number) {
-      const capacity = budget - MAX_FUNDING_FEE_SATS
+      const capacity = budget - FUNDING_FEE_RESERVE_SATS
       if (!Number.isSafeInteger(capacity) || capacity <= 0) throw new SessionError('The session amount is too small to cover its fees.', false)
       const existing = load()
       // An interrupted open never reached the server's refund step: cancel it.
@@ -218,7 +224,7 @@ export function createSessionClient(deps: SessionDeps) {
       try {
         const template = Transaction.fromAtomicBEEF(signable.tx)
         const fee = networkFee(template)
-        if (fee == null || fee > MAX_FUNDING_FEE_SATS) throw new SessionError(`Session miner fee ${fee ?? 'unknown'} exceeds ${MAX_FUNDING_FEE_SATS} sats. Nothing was sent.`, false)
+        if (fee == null || fee > feeLimit(template)) throw new SessionError(`The wallet's miner fee (${fee ?? 'unknown'} sats) is far above the usual rate. Nothing was sent; check your wallet's fee setting.`, false)
         if (template.outputs[0]?.satoshis !== capacity || template.outputs[0].lockingScript.toHex() !== lockingScript)
           throw new SessionError('The wallet changed the session payment. Nothing was sent.', false)
         const signed = await wallet.signAction({ reference: signable.reference, spends: {}, options: { noSend: true, returnTXIDOnly: false } })
@@ -261,18 +267,21 @@ export function createSessionClient(deps: SessionDeps) {
     },
 
     /**
-     * Top up: one wallet approval moves the current balance plus new sats from
-     * the wallet into a new balance of `budget` (fees included), paying for the
-     * pages already read in the same transaction. Nothing is sent until the
-     * server has signed the reader's refund for the new balance.
+     * Top up: one wallet approval adds `addSats` from the wallet (plus the miner
+     * fee) to what is left in the balance, moving both into a new balance and
+     * paying for the pages already read in the same transaction. Nothing is sent
+     * until the server has signed the reader's refund for the new balance.
      */
-    topUp(budget: number = config.channel.capacitySats) {
+    topUp(addSats: number) {
       const run = async (): Promise<SessionRecord> => {
         const record = load()
         if (record?.topUp) return finishTopUp(record)
         if (record?.state !== 'open' || !record.terms) throw new SessionError('There is no open reading balance to top up.', false)
         if (record.pending) throw new SessionError('A page payment is still being confirmed. Try the top-up again in a moment.', true)
-        const parent = record.terms, capacity = budget - MAX_FUNDING_FEE_SATS
+        if (!Number.isSafeInteger(addSats) || addSats < config.channel.minTopUpSats)
+          throw new SessionError(`Add at least ${config.channel.minTopUpSats} sats.`, false)
+        // The wallet supplies exactly addSats (+ fee): the old balance pays the pages read.
+        const parent = record.terms, capacity = parent.capacity - record.paid + addSats
         const offer = await deps.authJson<Offer & { parent: { channelId: string; fundingTxid: string; fundingVout: number; paid: number; payoutScript: string; inputBeef: string } }>(
           api(record.edition, `channels/${record.channelId}/topup`), 'POST', { capacity })
         await checkOffer(offer, capacity)
@@ -301,15 +310,16 @@ export function createSessionClient(deps: SessionDeps) {
           })
         } catch (error) {
           await cancel()
-          throw notEnough(error, `Your wallet does not have enough free sats to top up to ${budget}.`, budget)
+          throw notEnough(error, `Your wallet does not have ${addSats} sats free to add.`, addSats)
         }
         const signable = created.signableTransaction
         if (!signable) { await cancel(); throw new SessionError('The wallet did not prepare the top-up. Nothing was sent.', true) }
         let next: SessionRecord, fee: number
         try {
           const template = checkTopUp(parent, signable.tx, expect)
-          fee = networkFee(Transaction.fromAtomicBEEF(signable.tx)) ?? -1
-          if (fee < 0 || fee > MAX_TOP_UP_FEE_SATS) throw new SessionError(`Top-up miner fee ${fee < 0 ? 'unknown' : fee} exceeds ${MAX_TOP_UP_FEE_SATS} sats. Nothing was sent.`, false)
+          const unsigned = Transaction.fromAtomicBEEF(signable.tx)
+          fee = networkFee(unsigned) ?? -1
+          if (fee < 0 || fee > feeLimit(unsigned)) throw new SessionError(`The wallet's top-up miner fee (${fee < 0 ? 'unknown' : fee} sats) is far above the usual rate. Nothing was sent; check your wallet's fee setting.`, false)
           const readerSignature = await signChannelHash(wallet, parent, template.sighash, record.serverIdentity)
           const { serverSignature } = await deps.authJson<{ serverSignature: string }>(api(record.edition, `channels/${offer.channelId}/topup/countersign`), 'POST',
             { tx: Utils.toBase64(signable.tx), readerSignature: Utils.toBase64(readerSignature) })

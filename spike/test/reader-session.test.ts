@@ -282,7 +282,7 @@ test('after a lost connection, a kept page payment and an interrupted top-up fin
   for (const page of [5, 6, 7, 8]) await gateway.page(book, page)
   // Top up: approved and signed, then the last step loses its connection.
   activateDown = true
-  const during = await gateway.topUpSession!(260)
+  const during = await gateway.topUpSession!(130) // 70 left + 130 = a new balance of 200
   assert.match(during?.error ?? '', /^Connection lost while finishing your top-up\. It is saved/)
   activateDown = false
   assert.equal(await until(() => gateway.sessionStatus!()?.capacity === 200), true, 'the top-up finished on its own')

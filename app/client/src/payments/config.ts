@@ -35,10 +35,13 @@ export const config = {
   // Unidirectional payment channel ("reading session"): one funding approval,
   // then one wallet signature per page and one settlement when reading stops.
   channel: {
-    // Half the 5,000-sat monthly wallet allowance: the wallet counts every balance
-    // opened in a month and never subtracts returned sats, so a balance equal to
-    // the allowance leaves no room for a second one without an on-chain renewal.
-    capacitySats: 2500,
+    // One approval opens a balance equal to the 5,000-sat monthly allowance. The
+    // wallet counts every balance and top-up in a month and never subtracts
+    // returned sats, so a top-up in the same month makes the wallet ask to renew
+    // its allowance first (which needs a spare coin for its small fee).
+    capacitySats: 5000,
+    // Smallest amount a reader can add in a top-up (the miner fee is on top).
+    minTopUpSats: 100,
     minCapacitySats: 60,
     // Reader-funded fee carried by the single settlement (≈265 bytes at 100 sat/kB).
     settlementFeeSats: 30,

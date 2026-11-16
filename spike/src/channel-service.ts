@@ -119,7 +119,8 @@ export function createChannelService(options: {
       const parentTerms = termsOf(parent), capacity = requested ?? ceiling
       if (!Number.isSafeInteger(capacity) || capacity < config.channel.minCapacitySats || capacity > ceiling)
         throw new ChannelError(400, `Session amount must be ${config.channel.minCapacitySats}–${ceiling} sats`)
-      if (capacity <= parentTerms.capacity - parent.paid) throw new ChannelError(400, 'The balance is already at that amount')
+      if (capacity - (parentTerms.capacity - parent.paid) < config.channel.minTopUpSats)
+        throw new ChannelError(400, `Add at least ${config.channel.minTopUpSats} sats`)
       const offer = await createOffer(identity, parent.edition, capacity, parent.id)
       return { ...offer, parent: {
         channelId: parent.id, fundingTxid: parentTerms.fundingTxid, fundingVout: parentTerms.fundingVout,

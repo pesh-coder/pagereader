@@ -296,7 +296,7 @@ test('top-up: one approval moves the balance and new sats into a full new balanc
   const parent = await h.session.open(h.edition.id, 160)          // locks 100
   for (const page of [3, 4, 5, 6]) await h.session.pay(h.edition.id, page) // 20 paid, 80 left in the balance
   const before = h.reader.calls.length
-  const next = await h.session.topUp(260)                          // new balance locks 200
+  const next = await h.session.topUp(120)                          // adds 120: 80 left + 120 = new balance of 200
   // One wallet approval: one createAction + signAction, then the send.
   assert.deepEqual(h.reader.calls.slice(before), ['createAction', 'signAction', 'sendWith'])
   // The wallet added only the difference plus the miner fee: 200 + 20 owed - 100 moved + 25 fee.
@@ -315,16 +315,28 @@ test('top-up: one approval moves the balance and new sats into a full new balanc
   assert.equal(h.channels.row(next.channelId)!.paid, 5)
 })
 
-test('a top-up accepts its larger miner fee (64 sats seen on a phone) and refuses an excessive one', async t => {
+test('a top-up accepts the fee its size needs (64 sats seen on a phone) and refuses one far above the usual rate', async t => {
   const h = await harness(t)
   const parent = await h.session.open(h.edition.id, 160)
   for (const page of [3, 4, 5]) await h.session.pay(h.edition.id, page)
-  h.reader.setFee(101)
-  await assert.rejects(h.session.topUp(260), /Top-up miner fee 101 exceeds 100 sats/)
+  h.reader.setFee(5000)
+  await assert.rejects(h.session.topUp(120), /top-up miner fee \(5000 sats\) is far above the usual rate/)
   assert.equal(h.session.load()!.channelId, parent.channelId, 'the old balance is kept')
+  await assert.rejects(h.session.topUp(99), /Add at least 100 sats/)
   h.reader.setFee(64)
-  const next = await h.session.topUp(260)
+  const next = await h.session.topUp(120)
+  assert.equal(h.reader.lastFundingSats(), 120 + 64, 'the wallet adds exactly the chosen amount plus the fee')
   assert.equal(next.state, 'open'); assert.equal(next.fundingFeeSats, 64)
+})
+
+test('the server refuses a top-up that adds less than 100 sats, before any wallet action', async t => {
+  const h = await harness(t)
+  await h.session.open(h.edition.id, 160)                         // locks 100
+  await h.session.pay(h.edition.id, 3)                             // 95 left in the balance
+  const before = h.reader.calls.length
+  const small = h.client(h.storage, (path, body) => path.endsWith('/topup') ? { capacity: 100 - 5 + 50 } : body)
+  await assert.rejects(small.topUp(120), /Add at least 100 sats/)
+  assert.equal(h.reader.calls.length, before, 'no wallet action')
 })
 
 test('top-up the wallet refuses changes nothing: the balance reopens for reading', async t => {
@@ -336,7 +348,7 @@ test('top-up the wallet refuses changes nothing: the balance reopens for reading
     if (!args.options?.sendWith) throw Object.assign(new Error('User denied'), { code: 'ERR_PERMISSION_DENIED' })
     return refuse(args as never)
   }
-  await assert.rejects(h.session.topUp(260), /User denied/)
+  await assert.rejects(h.session.topUp(120), /User denied/)
   assert.equal(h.channels.row(parent.channelId)!.state, 'open')
   ;(h.reader.wallet as { createAction: unknown }).createAction = refuse
   await h.session.pay(h.edition.id, 4)
@@ -350,7 +362,7 @@ test('the server refuses a top-up that underpays for pages already read', async 
   const record = h.session.load()!
   // Pretend locally that nothing was read: the transaction would pay the server 0.
   h.storage.set(`pagestream-session-v2:${h.reader.identity}`, JSON.stringify({ ...record, paid: 0 }))
-  await assert.rejects(h.session.topUp(260), /changed on the server|does not pay/)
+  await assert.rejects(h.session.topUp(120), /changed on the server|does not pay/)
   assert.equal(h.channels.row(record.channelId)!.state, 'open')
 })
 
@@ -362,7 +374,7 @@ test('a top-up abandoned after countersigning reopens the balance after a day', 
   const parent = await vanishing.open(h.edition.id, 160)
   const original = h.reader.wallet.signAction
   ;(h.reader.wallet as { signAction: unknown }).signAction = async () => { throw new Error('Phone closed') }
-  await assert.rejects(vanishing.topUp(260), /Phone closed/)
+  await assert.rejects(vanishing.topUp(120), /Phone closed/)
   ;(h.reader.wallet as { signAction: unknown }).signAction = original
   assert.equal(h.channels.row(parent.channelId)!.state, 'rolling', 'page payments wait while a top-up is in flight')
   clock += 86400_000 + 1
